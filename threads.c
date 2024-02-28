@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/resource.h>
 
 static bool  run_dev_zero = false;
 
@@ -104,12 +105,47 @@ static void usage(const char *message)
 
 }
 
-static void threads_zero_to_null(void)
+
+
+/* open input and output, and return the size.
+ * If  we did, return TRUE.
+ * If not, return false;
+ */
+static bool next_file(int *input, int *output, size_t *size)
+{
+	if(true == run_dev_zero) {
+		static int num_times = 100;
+		const size_t GIG = 1000 * 1000 * 1000;
+
+		if(!num_times)
+			return false;
+
+
+		*input = open("/dev/zero", O_RDONLY);
+		assert(*input >= 0);
+		*output = open("/dev/null", O_WRONLY);
+		assert(*output >= 0);
+		*size = GIG;
+		num_times--;
+		return true;
+	} else {
+		abort();
+	}
+}
+
+static void run_threads(void)
 {
 	int i;
-	const size_t size = 1000 * 1000 * 1000;	
 	int work_left = 100;
 	struct thread_info *pthread;
+	long long int bytes_transferred = 0;
+	struct timeval start_time;
+	struct rusage start_usage;
+
+
+	gettimeofday(&start_time, NULL);
+	getrusage(RUSAGE_SELF,  &start_usage);
+
 
 	for(pthread = each_thread; pthread  < each_thread + num_threads; pthread++) {
 		int result;
@@ -118,12 +154,15 @@ static void threads_zero_to_null(void)
 
 		result = pthread_mutex_lock(&pthread->work_available);
 		assert(result == 0);
+		next_file(&pthread->input, &pthread->output, &pthread->bytes);
+#if 0
 		pthread->input = open("/dev/zero", O_RDONLY);
 		assert(pthread->input >= 0);
 		pthread->output = open("/dev/null", O_WRONLY);
 		assert(pthread->output >= 0);
+#endif
 		pthread->done = false;
-		pthread->bytes = size;
+		bytes_transferred +=  pthread->bytes;
 		result = pthread_create(&pthread->thread_info, NULL, copy_file, pthread);
 		assert(result == 0);
 	}
@@ -136,24 +175,25 @@ static void threads_zero_to_null(void)
 	}
 
 	while(1) {
-		printf("number of workers left = %d\n", work_left);
-
 		pthread_cond_wait(&cv, &able_to_condition);
 
 		for(pthread = each_thread; pthread < each_thread + num_threads; pthread++) {
 			if(pthread->done == true) {
+				bool another_file;
+
 				close(pthread->input);
 				close(pthread->output);
-				if(!work_left) {
+
+
+				another_file = next_file(&pthread->input, &pthread->output, &pthread->bytes);
+
+				if(false == another_file) {
 					pthread->terminated = true;
 					pthread->done = false;
 					pthread_cancel(pthread->thread_info);
 				} else {
-					work_left--;
-					pthread->input = open("/dev/zero", O_RDONLY);
-					pthread->output = open("/dev/null", O_WRONLY);
 					pthread->done = false;
-					pthread->bytes = size;
+					bytes_transferred += pthread->bytes;
 					pthread_mutex_unlock(&pthread->work_available);
 				}
 			}
@@ -170,19 +210,30 @@ static void threads_zero_to_null(void)
 		}
 
 		if(not_terminated == false) {
-			printf("work left = %d\n", work_left);	
-			exit(0);
-
+			break;
 		}
 	}
 
+	struct timeval end_time;
+	struct timeval delta_time;
+	double microseconds;
+	struct rusage end_rusage;
+
+
+	gettimeofday(&end_time, NULL);
+	getrusage(RUSAGE_SELF, &end_rusage);
+
+	timersub(&end_time, &start_time, &delta_time);
+	microseconds = delta_time.tv_sec * 1000 * 1000;
+	microseconds += delta_time.tv_usec;
+	printf("bytes = %lld, seconds = %.3f\n", bytes_transferred, microseconds / (1000 * 1000));
+	
 }
 				
 
 static void do_work(void)
 {
-	if(true == run_dev_zero)
-		threads_zero_to_null();
+	run_threads();
 }
 
 main(int argc, char *argv[])
