@@ -1,3 +1,3 @@
 
 threads:	threads.c
-	${CC} -pthread -g $^ -o $@
+	${CC} -pthread -Wall -g $^ -o $@

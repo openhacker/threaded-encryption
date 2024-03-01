@@ -11,8 +11,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/resource.h>
+#include <dirent.h>
 
-static bool  run_dev_zero = false;
+static bool  input_dev_zero = false;
+static bool output_dev_null = false;
 
 static  pthread_mutex_t able_to_condition = PTHREAD_MUTEX_INITIALIZER;
 static  pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
@@ -32,6 +34,8 @@ struct thread_info {
 
 static struct thread_info *each_thread;
 static int num_threads = 1;
+
+static char *directory = NULL;
 
 static void safe_write(int fd, char *buffer, int size)
 {
@@ -70,7 +74,6 @@ static void *copy_file(void *args)
 	while(1) {
 		int bytes_copied = 0;
 
-//		printf("thread %d: %d\n", (int) pthread_self(), times++);
 
 		pthread_mutex_lock(&p->work_available);
 		
@@ -90,7 +93,6 @@ static void *copy_file(void *args)
 		}	
 		p->done = true;
 		pthread_cond_broadcast(&cv);
-//		fprintf(stderr, "%d ended work\n", (int) pthread_self());
 	}
 }
 
@@ -110,12 +112,23 @@ static void usage(const char *message)
 	fprintf(stderr, "Usage:\n");
 	fprintf(stderr, "\tt\tnum threads (default 1)\n");
 	fprintf(stderr, "\tz\trun /dev/zero to /dev/null\n");
-	
+	fprintf(stderr, "\td\tdirectory\trun from files in a  directory\n");
+	fprintf(stderr, "\tn\trun files to /dev/null\n");
 	exit(1);
 
 }
 
 
+static DIR *dir;
+
+static void prime_opendir(void)
+{
+	dir = opendir(directory);
+	if(!dir) {
+		fprintf(stderr, "cannot opendir(%s):%s\n", directory, strerror(errno));
+		exit(1);	
+	}
+}
 
 /* open input and output, and return the size.
  * If  we did, return TRUE.
@@ -123,7 +136,7 @@ static void usage(const char *message)
  */
 static bool next_file(int *input, int *output, size_t *size)
 {
-	if(true == run_dev_zero) {
+	if(true == input_dev_zero) {
 		static int num_times = 100;
 		const size_t GIG = 1000 * 1000 * 1000;
 
@@ -137,10 +150,40 @@ static bool next_file(int *input, int *output, size_t *size)
 		assert(*output >= 0);
 		*size = GIG;
 		num_times--;
-		return true;
 	} else {
-		abort();
+		struct dirent *dirent;
+		char dest[256];
+		struct stat stat;
+		int result;
+
+		dirent = readdir(dir);
+		if(!dirent) {
+			fprintf(stderr, "EOF on readdir\n");
+			return false;
+		}
+
+		*input = open(dirent->d_name, O_RDONLY);
+		if(*input < 0)  {
+			fprintf(stderr, "cannot open %s: %s\n", dirent->d_name, strerror(errno));
+			exit(1);
+		}
+		if(output_dev_null == true)
+			strcpy(dest, "/dev/null");
+		else snprintf(dest, sizeof dest, "%s.enc", dirent->d_name);
+		*output = open(dest, O_WRONLY | O_CREAT, 0666);
+		if(*output < 0) {
+			fprintf(stderr, "cannot create %s: %s\n", dest, strerror(errno));
+			exit(1);
+		}
+
+		result = fstat(*input, &stat);
+		if(result < 0) {
+			fprintf(stderr, "cannot stat %s: %s\n", dirent->d_name, strerror(errno));
+			exit(1);
+		}
+		*size = stat.st_size;
 	}
+	return true;
 }
 
 static void run_threads(void)
@@ -155,6 +198,8 @@ static void run_threads(void)
 	gettimeofday(&start_time, NULL);
 	getrusage(RUSAGE_SELF,  &start_rusage);
 
+	if(directory)
+		prime_opendir();
 
 	for(pthread = each_thread; pthread  < each_thread + num_threads; pthread++) {
 		int result;
@@ -254,6 +299,8 @@ static void run_threads(void)
 
 static void do_work(void)
 {
+	if(directory)
+		chdir(directory);
 	run_threads();
 }
 
@@ -263,7 +310,7 @@ main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv, "t:z");
+		c = getopt(argc, argv, "t:zd:nh");
 		if(-1 == c) 
 			break;
 		switch(c) {
@@ -271,7 +318,16 @@ main(int argc, char *argv[])
 				num_threads = strtol(optarg, NULL, 10);
 				break;
 			case 'z':
-				run_dev_zero = true;
+				input_dev_zero = true;
+				break;
+			case 'd':
+				directory = strdup(optarg);
+				break;
+			case 'n':
+				output_dev_null = true;
+				break;
+			case 'h':
+				usage(NULL);
 				break;
 			default:	
 				usage("Unknown option");
@@ -279,11 +335,10 @@ main(int argc, char *argv[])
 		}	
 
 	}
-	fprintf(stderr, "threads = %d, /dev/zero = %d\n", num_threads, run_dev_zero);
+	fprintf(stderr, "threads = %d, /dev/zero = %d\n", num_threads, input_dev_zero);
 
 	create_thread_structure();
 	do_work();
-		
 }
 
 
