@@ -52,6 +52,16 @@ static void safe_write(int fd, char *buffer, int size)
 
 }
 
+static double timeval_to_seconds(struct timeval t)
+{
+	double seconds;
+
+	seconds = t.tv_sec;
+	seconds += t.tv_usec / (1000.0 * 1000.0);
+
+	return seconds;
+}
+
 static void *copy_file(void *args)
 {
 	struct thread_info *p = (struct thread_info *) args;
@@ -60,7 +70,7 @@ static void *copy_file(void *args)
 	while(1) {
 		int bytes_copied = 0;
 
-		printf("thread %d: %d\n", (int) pthread_self(), times++);
+//		printf("thread %d: %d\n", (int) pthread_self(), times++);
 
 		pthread_mutex_lock(&p->work_available);
 		
@@ -80,7 +90,7 @@ static void *copy_file(void *args)
 		}	
 		p->done = true;
 		pthread_cond_broadcast(&cv);
-		fprintf(stderr, "%d ended work\n", (int) pthread_self());
+//		fprintf(stderr, "%d ended work\n", (int) pthread_self());
 	}
 }
 
@@ -140,11 +150,10 @@ static void run_threads(void)
 	struct thread_info *pthread;
 	long long int bytes_transferred = 0;
 	struct timeval start_time;
-	struct rusage start_usage;
-
+	struct rusage start_rusage;
 
 	gettimeofday(&start_time, NULL);
-	getrusage(RUSAGE_SELF,  &start_usage);
+	getrusage(RUSAGE_SELF,  &start_rusage);
 
 
 	for(pthread = each_thread; pthread  < each_thread + num_threads; pthread++) {
@@ -217,8 +226,11 @@ static void run_threads(void)
 	struct timeval end_time;
 	struct timeval delta_time;
 	double microseconds;
+	double seconds;
 	struct rusage end_rusage;
-
+	struct timeval delta_usertime;
+	struct timeval delta_systime;
+	double gigabytes;
 
 	gettimeofday(&end_time, NULL);
 	getrusage(RUSAGE_SELF, &end_rusage);
@@ -226,7 +238,16 @@ static void run_threads(void)
 	timersub(&end_time, &start_time, &delta_time);
 	microseconds = delta_time.tv_sec * 1000 * 1000;
 	microseconds += delta_time.tv_usec;
-	printf("bytes = %lld, seconds = %.3f\n", bytes_transferred, microseconds / (1000 * 1000));
+//	printf("bytes = %lld, seconds = %.3f\n", bytes_transferred, microseconds / (1000 * 1000));
+	gigabytes = bytes_transferred / (1000 * 1000.0 * 1000.0);
+	seconds = microseconds / (1000.0 * 1000.0);
+	printf("gig/sec = %.3f\n", gigabytes / seconds);
+
+	timersub(&end_rusage.ru_utime, &start_rusage.ru_utime, &delta_usertime);
+	timersub(&end_rusage.ru_stime, &start_rusage.ru_stime, &delta_systime);
+
+	printf("wall time =  %.3f user time = %.3f, systime = %.3f\n",
+			timeval_to_seconds(delta_time), timeval_to_seconds(delta_usertime), timeval_to_seconds(delta_systime));
 	
 }
 				
