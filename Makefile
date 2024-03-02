@@ -1,3 +1,3 @@
 
 threads:	threads.c
-	${CC} -pthread -Wall -g $^ -o $@
+	${CC} -pthread -Wall -g $^ -o $@ -lcrypto

@@ -19,6 +19,12 @@
 
 static bool  input_dev_zero = false;
 static bool output_dev_null = false;
+enum operation_type { ENCRYPT, DECRYPT, COPY };
+
+static enum operation_type type_of_op = COPY;
+
+#define AES_256_KEY_SIZE    32
+#define AES_BLOCK_SIZE	    16
 
 static  pthread_mutex_t able_to_condition = PTHREAD_MUTEX_INITIALIZER;
 static  pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
@@ -32,6 +38,11 @@ struct thread_info {
 	volatile bool done;		// work finished, unlock work_avilable to start new work cycle
 	bool terminated;		// thread is terminted
 	pthread_t thread_info;
+	enum operation_type type_of_op;
+	/* need the following for encrypt/decrypt */
+	uint8_t key[AES_256_KEY_SIZE];
+	uint8_t iv[AES_BLOCK_SIZE];
+	const EVP_CIPHER *cipher_type;
 };
 
 
@@ -39,9 +50,6 @@ struct thread_info {
 static struct thread_info *each_thread;
 static int num_threads = 1;
 
-#define AES_256_KEY_SIZE    32
-#define AES_BLOCK_SIZE	    16
-static enum { ENCRYPT, DECRYPT, COPY } type_of_op = COPY;
 static const uint8_t aes_key[AES_256_KEY_SIZE] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
 						   11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
 						   21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
@@ -111,19 +119,50 @@ static void *copy_file(void *args)
 	return NULL;
 }
 
-// encrypt/decrypt threads arguments 
-struct  aes_info {
-	bool encrypt;	// true to encrypt, false to decrept;
-	const uint8_t key[AES_256_KEY_SIZE];
-	const uint8_t iv[AES_BLOCK_SIZE];
-	int input_fd;
-	int output_fd;
-	size_t input_size;
-};
 
 static void *encrypt_decrypt(void *args)
 {
-	struct aes_info *aes_info = (struct aes_info *) args;
+	struct thread_info *aes_info = (struct thread_info *) args;
+	int cipher_block_size = EVP_CIPHER_block_size(aes_info->cipher_type);
+	bool encrypt;
+
+	if(aes_info->type_of_op == ENCRYPT)
+		encrypt = true;
+	else	encrypt = false;
+
+
+	while(1) {
+		EVP_CIPHER_CTX *ctx;
+		const int BUFSIZE = 8 * 1024;
+		uint8_t in_buf[BUFSIZE];
+		uint8_t out_buf[BUFSIZE + cipher_block_size];
+
+		int bytes_copied = 0;
+
+		pthread_mutex_lock(&aes_info->work_available);
+		ctx = EVP_CIPHER_CTX_new();
+		if(!ctx) {
+			fprintf(stderr, "Cannot create CTX\n");
+			abort();
+		}
+
+	    	/* Don't set key or IV right away; we want to check lengths */
+		if(!EVP_CipherInit_ex(ctx, aes_info->cipher_type, NULL, NULL, NULL, encrypt)){
+			fprintf(stderr, "ERROR: EVP_CipherInit_ex failed. OpenSSL error: %s\n", ERR_error_string(ERR_get_error(), NULL));
+			abort();
+		}
+
+#if 0
+    		OPENSSL_assert(EVP_CIPHER_CTX_key_length(ctx) == AES_256_KEY_SIZE);
+		OPENSSL_assert(EVP_CIPHER_CTX_iv_length(ctx) == AES_BLOCK_SIZE);
+#endif
+		
+
+		while(bytes_copied < aes_info->bytes) {
+			int bytes_read;
+
+		}
+	}
 
 	return NULL;
 }
@@ -132,7 +171,13 @@ static void *encrypt_decrypt(void *args)
 
 static void create_thread_structure(void)
 {
+	struct thread_info  *pthread;
 	each_thread = calloc(sizeof(struct thread_info), num_threads);
+	for(pthread = each_thread; pthread < each_thread + num_threads; pthread++) {
+		pthread->type_of_op = type_of_op;
+		memcpy(pthread->key, aes_key, sizeof aes_key);
+		memcpy(pthread->iv,  iv, sizeof iv);
+	}
 }
 
 
@@ -242,12 +287,26 @@ static void run_threads(void)
 	long long int bytes_transferred = 0;
 	struct timeval start_time;
 	struct rusage start_rusage;
+	void *(*func)(void *);
+	
 
 	gettimeofday(&start_time, NULL);
 	getrusage(RUSAGE_SELF,  &start_rusage);
 
 	if(directory)
 		prime_opendir();
+
+	switch(type_of_op) {
+		case COPY:
+			func = copy_file;
+			break;
+		case ENCRYPT:
+		case DECRYPT:
+			func = encrypt_decrypt;
+			break;
+		default:
+			abort();
+	}
 
 	for(pthread = each_thread; pthread  < each_thread + num_threads; pthread++) {
 		int result;
@@ -257,15 +316,11 @@ static void run_threads(void)
 		result = pthread_mutex_lock(&pthread->work_available);
 		assert(result == 0);
 		next_file(&pthread->input, &pthread->output, &pthread->bytes);
-#if 0
-		pthread->input = open("/dev/zero", O_RDONLY);
-		assert(pthread->input >= 0);
-		pthread->output = open("/dev/null", O_WRONLY);
-		assert(pthread->output >= 0);
-#endif
+		
 		pthread->done = false;
 		bytes_transferred +=  pthread->bytes;
-		result = pthread_create(&pthread->thread_info, NULL, copy_file, pthread);
+			
+		result = pthread_create(&pthread->thread_info, NULL, func, pthread);
 		assert(result == 0);
 	}
 
