@@ -130,14 +130,13 @@ static void *encrypt_decrypt(void *args)
 		encrypt = true;
 	else	encrypt = false;
 
-
 	while(1) {
 		EVP_CIPHER_CTX *ctx;
 		const int BUFSIZE = 8 * 1024;
 		uint8_t in_buf[BUFSIZE];
 		uint8_t out_buf[BUFSIZE + cipher_block_size];
 
-		int bytes_copied = 0;
+		int total_read = 0;
 
 		pthread_mutex_lock(&aes_info->work_available);
 		ctx = EVP_CIPHER_CTX_new();
@@ -156,12 +155,43 @@ static void *encrypt_decrypt(void *args)
     		OPENSSL_assert(EVP_CIPHER_CTX_key_length(ctx) == AES_256_KEY_SIZE);
 		OPENSSL_assert(EVP_CIPHER_CTX_iv_length(ctx) == AES_BLOCK_SIZE);
 #endif
+    /* Now we can set key and IV */
+		if(!EVP_CipherInit_ex(ctx, NULL, NULL, aes_info->key, aes_info->iv, encrypt)){
+		        fprintf(stderr, "ERROR: EVP_CipherInit_ex failed. OpenSSL error: %s\n", ERR_error_string(ERR_get_error(), NULL));
+			abort();
+		}
 		
 
-		while(bytes_copied < aes_info->bytes) {
+		while(total_read < aes_info->bytes) {
 			int bytes_read;
+			int out_len;
 
+			bytes_read = read(aes_info->input, in_buf, sizeof in_buf);
+			if(bytes_read < 0) {
+				fprintf(stderr, "problem reading file %s\n", strerror(errno));
+				abort();
+			}
+			if(!EVP_CipherUpdate(ctx, out_buf, &out_len, in_buf,  bytes_read)) {
+       			     fprintf(stderr, "ERROR: EVP_CipherUpdate failed. OpenSSL error: %s\n", 
+					     ERR_error_string(ERR_get_error(), NULL));
+				abort();
+			}
+			safe_write(aes_info->output, out_buf, out_len);
+			total_read +=  bytes_read;
 		}
+
+		int out_len;
+
+		if(!EVP_CipherFinal_ex(ctx, out_buf, &out_len)) {
+       			fprintf(stderr, "ERROR: EVP_CipherFinal_ex failed. OpenSSL error: %s\n", 
+						ERR_error_string(ERR_get_error(), NULL));
+			abort();
+		}
+		safe_write(aes_info->output, out_buf, out_len);
+		
+		EVP_CIPHER_CTX_cleanup(ctx);
+		aes_info->done = true;
+		pthread_cond_broadcast(&cv);
 	}
 
 	return NULL;
@@ -177,6 +207,7 @@ static void create_thread_structure(void)
 		pthread->type_of_op = type_of_op;
 		memcpy(pthread->key, aes_key, sizeof aes_key);
 		memcpy(pthread->iv,  iv, sizeof iv);
+		pthread->cipher_type = EVP_aes_256_cbc();
 	}
 }
 
@@ -236,10 +267,15 @@ static bool next_file(int *input, int *output, size_t *size)
 		struct stat stat;
 		int result;
 
-		dirent = readdir(dir);
-		if(!dirent) {
-			fprintf(stderr, "EOF on readdir\n");
-			return false;
+		while(1) {
+			dirent = readdir(dir);
+			if(!dirent) {
+				fprintf(stderr, "EOF on readdir\n");
+				return false;
+			}
+			if(!strcmp(dirent->d_name, ".") || !strcmp(dirent->d_name, ".."))
+				continue;
+			break;
 		}
 
 		*input = open(dirent->d_name, O_RDONLY);
