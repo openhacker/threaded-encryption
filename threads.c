@@ -12,6 +12,10 @@
 #include <fcntl.h>
 #include <sys/resource.h>
 #include <dirent.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
+#include <openssl/aes.h>
+#include <openssl/rand.h>
 
 static bool  input_dev_zero = false;
 static bool output_dev_null = false;
@@ -35,6 +39,17 @@ struct thread_info {
 static struct thread_info *each_thread;
 static int num_threads = 1;
 
+#define AES_256_KEY_SIZE    32
+#define AES_BLOCK_SIZE	    16
+static enum { ENCRYPT, DECRYPT, COPY } type_of_op = COPY;
+static const uint8_t aes_key[AES_256_KEY_SIZE] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+						   11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+						   21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+						   31, 32
+						};
+static const uint8_t iv[AES_BLOCK_SIZE] = { 0 };
+
+
 static char *directory = NULL;
 
 static void safe_write(int fd, char *buffer, int size)
@@ -49,6 +64,8 @@ static void safe_write(int fd, char *buffer, int size)
 		if(bytes_written < 0) {
 			fprintf(stderr, "write failed: %s\n", strerror(errno));
 		} else {
+			fprintf(stderr, "partial write:  %lu wrote %d, wanted %d\n", pthread_self(),
+									bytes_written, size);
 			size -= bytes_written;
 			buffer += bytes_written;
 		}
@@ -69,17 +86,14 @@ static double timeval_to_seconds(struct timeval t)
 static void *copy_file(void *args)
 {
 	struct thread_info *p = (struct thread_info *) args;
-	int times = 0;
 
 	while(1) {
 		int bytes_copied = 0;
-
 
 		pthread_mutex_lock(&p->work_available);
 		
 		while(bytes_copied < p->bytes) {
 			int bytes_read;
-			int bytes_written;
 			char buffer[8192];
 
 			bytes_read = read(p->input,  buffer, sizeof buffer);
@@ -94,7 +108,26 @@ static void *copy_file(void *args)
 		p->done = true;
 		pthread_cond_broadcast(&cv);
 	}
+	return NULL;
 }
+
+// encrypt/decrypt threads arguments 
+struct  aes_info {
+	bool encrypt;	// true to encrypt, false to decrept;
+	const uint8_t key[AES_256_KEY_SIZE];
+	const uint8_t iv[AES_BLOCK_SIZE];
+	int input_fd;
+	int output_fd;
+	size_t input_size;
+};
+
+static void *encrypt_decrypt(void *args)
+{
+	struct aes_info *aes_info = (struct aes_info *) args;
+
+	return NULL;
+}
+
 
 
 static void create_thread_structure(void)
@@ -114,6 +147,8 @@ static void usage(const char *message)
 	fprintf(stderr, "\tz\trun /dev/zero to /dev/null\n");
 	fprintf(stderr, "\td\tdirectory\trun from files in a  directory\n");
 	fprintf(stderr, "\tn\trun files to /dev/null\n");
+	fprintf(stderr, "\tD\tdo decryption (default COPY)\n");
+	fprintf(stderr, "\tE\tdo encryption (default COPY)\n");
 	exit(1);
 
 }
@@ -152,7 +187,7 @@ static bool next_file(int *input, int *output, size_t *size)
 		num_times--;
 	} else {
 		struct dirent *dirent;
-		char dest[256];
+		char dest[256 + 5];	// slightly bigger
 		struct stat stat;
 		int result;
 
@@ -169,7 +204,21 @@ static bool next_file(int *input, int *output, size_t *size)
 		}
 		if(output_dev_null == true)
 			strcpy(dest, "/dev/null");
-		else snprintf(dest, sizeof dest, "%s.enc", dirent->d_name);
+		else switch(type_of_op) {
+			case COPY:
+				snprintf(dest, sizeof dest, "%s.copy", dirent->d_name);
+				break;
+			case ENCRYPT:
+				snprintf(dest, sizeof dest, "%s.enc", dirent->d_name);
+				break;
+			case DECRYPT:
+				snprintf(dest, sizeof dest, "%s.dec", dirent->d_name);
+				break;
+			default:
+				fprintf(stderr, "problem\n");
+				abort();
+		}
+				
 		*output = open(dest, O_WRONLY | O_CREAT, 0666);
 		if(*output < 0) {
 			fprintf(stderr, "cannot create %s: %s\n", dest, strerror(errno));
@@ -188,7 +237,6 @@ static bool next_file(int *input, int *output, size_t *size)
 
 static void run_threads(void)
 {
-	int i;
 	int work_left = 100;
 	struct thread_info *pthread;
 	long long int bytes_transferred = 0;
@@ -304,13 +352,13 @@ static void do_work(void)
 	run_threads();
 }
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv, "t:zd:nh");
+		c = getopt(argc, argv, "t:zd:nhDE");
 		if(-1 == c) 
 			break;
 		switch(c) {
@@ -329,6 +377,12 @@ main(int argc, char *argv[])
 			case 'h':
 				usage(NULL);
 				break;
+			case 'D':
+				type_of_op = DECRYPT;
+				break;
+			case 'E':
+				type_of_op = ENCRYPT;
+				break;	
 			default:	
 				usage("Unknown option");
 				break;
