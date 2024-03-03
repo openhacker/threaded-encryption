@@ -20,6 +20,7 @@
 static bool  input_dev_zero = false;
 static bool output_dev_null = false;
 enum operation_type { ENCRYPT, DECRYPT, COPY };
+static int number_files = 0;	// files written
 
 static enum operation_type type_of_op = COPY;
 
@@ -258,6 +259,7 @@ static bool next_file(int *input, int *output, size_t *size)
 		*input = open("/dev/zero", O_RDONLY);
 		assert(*input >= 0);
 		*output = open("/dev/null", O_WRONLY);
+		number_files++;
 		assert(*output >= 0);
 		*size = GIG;
 		num_times--;
@@ -283,6 +285,7 @@ static bool next_file(int *input, int *output, size_t *size)
 			fprintf(stderr, "cannot open %s: %s\n", dirent->d_name, strerror(errno));
 			exit(1);
 		}
+		number_files++;
 		if(output_dev_null == true)
 			strcpy(dest, "/dev/null");
 		else switch(type_of_op) {
@@ -419,10 +422,12 @@ static void run_threads(void)
 	gettimeofday(&end_time, NULL);
 	getrusage(RUSAGE_SELF, &end_rusage);
 
+
+	fprintf(stderr, "created %d files\n", number_files);
 	timersub(&end_time, &start_time, &delta_time);
 	microseconds = delta_time.tv_sec * 1000 * 1000;
 	microseconds += delta_time.tv_usec;
-//	printf("bytes = %lld, seconds = %.3f\n", bytes_transferred, microseconds / (1000 * 1000));
+
 	gigabytes = bytes_transferred / (1000 * 1000.0 * 1000.0);
 	seconds = microseconds / (1000.0 * 1000.0);
 	printf("gig/sec = %.3f\n", gigabytes / seconds);
