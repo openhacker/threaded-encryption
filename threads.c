@@ -226,20 +226,40 @@ static void usage(const char *message)
 	fprintf(stderr, "\tn\trun files to /dev/null\n");
 	fprintf(stderr, "\tD\tdo decryption (default COPY)\n");
 	fprintf(stderr, "\tE\tdo encryption (default COPY)\n");
+	fprintf(stderr, "\to\tsend output to /dev/null (for directory)\n");
 	exit(1);
 
 }
 
 
-static DIR *dir;
+static char **filenames;
+int num_filenames;
 
 static void prime_opendir(void)
 {
+	DIR *dir;
+	struct dirent *dirent;
+
 	dir = opendir(directory);
 	if(!dir) {
 		fprintf(stderr, "cannot opendir(%s):%s\n", directory, strerror(errno));
 		exit(1);	
 	}
+	while( (dirent = readdir(dir)) ) {
+		if(!strcmp(dirent->d_name, ".") || !strcmp(dirent->d_name, ".."))
+				continue;
+		num_filenames++;
+		filenames = reallocarray(filenames, num_filenames, sizeof(char *));
+		assert(filenames);
+		filenames[num_filenames - 1] = strdup(dirent->d_name);
+	}
+	closedir(dir);
+
+#if 0
+	for(int i = 0; i < num_filenames; i++) 
+		printf("%d = %s\n", i, filenames[i]);
+#endif
+
 }
 
 /* open input and output, and return the size.
@@ -264,25 +284,18 @@ static bool next_file(int *input, int *output, size_t *size)
 		*size = GIG;
 		num_times--;
 	} else {
-		struct dirent *dirent;
-		char dest[256 + 5];	// slightly bigger
+		char dest[256];
 		struct stat stat;
 		int result;
+		char *name;
 
-		while(1) {
-			dirent = readdir(dir);
-			if(!dirent) {
-				fprintf(stderr, "EOF on readdir\n");
-				return false;
-			}
-			if(!strcmp(dirent->d_name, ".") || !strcmp(dirent->d_name, ".."))
-				continue;
-			break;
-		}
+		if(number_files >= num_filenames)
+			return false;
+		name = filenames[number_files];
 
-		*input = open(dirent->d_name, O_RDONLY);
+		*input = open(name, O_RDONLY);
 		if(*input < 0)  {
-			fprintf(stderr, "cannot open %s: %s\n", dirent->d_name, strerror(errno));
+			fprintf(stderr, "cannot open %s: %s\n", name, strerror(errno));
 			exit(1);
 		}
 		number_files++;
@@ -290,13 +303,13 @@ static bool next_file(int *input, int *output, size_t *size)
 			strcpy(dest, "/dev/null");
 		else switch(type_of_op) {
 			case COPY:
-				snprintf(dest, sizeof dest, "%s.copy", dirent->d_name);
+				snprintf(dest, sizeof dest, "%s.copy", name);
 				break;
 			case ENCRYPT:
-				snprintf(dest, sizeof dest, "%s.enc", dirent->d_name);
+				snprintf(dest, sizeof dest, "%s.enc", name);
 				break;
 			case DECRYPT:
-				snprintf(dest, sizeof dest, "%s.dec", dirent->d_name);
+				snprintf(dest, sizeof dest, "%s.dec", name);
 				break;
 			default:
 				fprintf(stderr, "problem\n");
@@ -311,7 +324,7 @@ static bool next_file(int *input, int *output, size_t *size)
 
 		result = fstat(*input, &stat);
 		if(result < 0) {
-			fprintf(stderr, "cannot stat %s: %s\n", dirent->d_name, strerror(errno));
+			fprintf(stderr, "cannot stat %s: %s\n", name, strerror(errno));
 			exit(1);
 		}
 		*size = stat.st_size;
@@ -327,7 +340,6 @@ static void run_threads(void)
 	struct timeval start_time;
 	struct rusage start_rusage;
 	void *(*func)(void *);
-	
 
 	gettimeofday(&start_time, NULL);
 	getrusage(RUSAGE_SELF,  &start_rusage);
@@ -454,12 +466,15 @@ int main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv, "t:zd:nhDE");
+		c = getopt(argc, argv, "t:zod:nhDE");
 		if(-1 == c) 
 			break;
 		switch(c) {
 			case 't':
 				num_threads = strtol(optarg, NULL, 10);
+				break;
+			case 'o':
+				output_dev_null = true;
 				break;
 			case 'z':
 				input_dev_zero = true;
