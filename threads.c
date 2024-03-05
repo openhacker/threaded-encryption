@@ -58,6 +58,8 @@ static const uint8_t aes_key[AES_256_KEY_SIZE] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 						};
 static const uint8_t iv[AES_BLOCK_SIZE] = { 0 };
 
+static bool algorithm = false;	// false is aes-256-cbc, true is aes-256-gcm
+
 
 static char *directory = NULL;
 
@@ -208,7 +210,9 @@ static void create_thread_structure(void)
 		pthread->type_of_op = type_of_op;
 		memcpy(pthread->key, aes_key, sizeof aes_key);
 		memcpy(pthread->iv,  iv, sizeof iv);
-		pthread->cipher_type = EVP_aes_256_cbc();
+		if(algorithm == false)
+			pthread->cipher_type = EVP_aes_256_cbc();
+		else	pthread->cipher_type = EVP_aes_256_gcm();
 	}
 }
 
@@ -436,6 +440,8 @@ static void run_threads(void)
 
 
 	fprintf(stderr, "created %d files\n", number_files);
+	fprintf(stderr, "algorithm = %s\n", algorithm == false ? "aes-256-cbc" :
+								"aes-256-gcm");
 	timersub(&end_time, &start_time, &delta_time);
 	microseconds = delta_time.tv_sec * 1000 * 1000;
 	microseconds += delta_time.tv_usec;
@@ -466,10 +472,13 @@ int main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv, "t:zod:nhDE");
+		c = getopt(argc, argv, "at:zod:nhDE");
 		if(-1 == c) 
 			break;
 		switch(c) {
+			case 'a':
+				algorithm = true;
+				break;
 			case 't':
 				num_threads = strtol(optarg, NULL, 10);
 				break;
