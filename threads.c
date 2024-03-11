@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <stdint.h>  // for ubuntu 16.04
 #include <stdlib.h>
 #include <sys/time.h>
 #include <string.h>
@@ -51,11 +52,19 @@ struct thread_info {
 static struct thread_info *each_thread;
 static int num_threads = 1;
 
+#if 0
 static const uint8_t aes_key[AES_256_KEY_SIZE] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
 						   11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
 						   21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
 						   31, 32
 						};
+
+#else
+static const uint8_t aes_key[AES_256_KEY_SIZE] =  {125, 223, 230, 12, 126, 250, 227, 251, 12, 184,
+       						136, 43, 108, 184, 162, 191, 54, 101, 87, 212, 
+						199, 180, 198, 100, 210, 118, 164, 7, 169, 232, 
+								181, 172  };
+#endif
 static const uint8_t iv[AES_BLOCK_SIZE] = { 0 };
 
 static bool algorithm = false;	// false is aes-256-cbc, true is aes-256-gcm
@@ -231,13 +240,14 @@ static void usage(const char *message)
 	fprintf(stderr, "\tD\tdo decryption (default COPY)\n");
 	fprintf(stderr, "\tE\tdo encryption (default COPY)\n");
 	fprintf(stderr, "\to\tsend output to /dev/null (for directory)\n");
+	fprintf(stderr, "\ta\tselect algorithm -- default aes_256_cbc, use to change to aes_256_gcm");
 	exit(1);
 
 }
 
 
-static char **filenames;
-int num_filenames;
+static char **filenames = NULL;
+static int num_filenames;
 
 static void prime_opendir(void)
 {
@@ -253,7 +263,11 @@ static void prime_opendir(void)
 		if(!strcmp(dirent->d_name, ".") || !strcmp(dirent->d_name, ".."))
 				continue;
 		num_filenames++;
+#if 0
 		filenames = reallocarray(filenames, num_filenames, sizeof(char *));
+#else
+		filenames = realloc(filenames, num_filenames * sizeof(char *));
+#endif
 		assert(filenames);
 		filenames[num_filenames - 1] = strdup(dirent->d_name);
 	}
@@ -474,7 +488,7 @@ int main(int argc, char *argv[])
 
 		c = getopt(argc, argv, "at:zod:nhDE");
 		if(-1 == c) 
-			break;
+			break; 
 		switch(c) {
 			case 'a':
 				algorithm = true;
