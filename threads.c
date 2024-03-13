@@ -93,6 +93,19 @@ static void safe_write(int fd, char *buffer, int size)
 
 }
 
+static bool disable_aesni = false;
+
+static void disable_aesni_environment(void)
+{
+	int result;
+
+	result = setenv("OPENSSL_ia32cap", "~0x200000200000000", 0);
+	if(result < 0) {
+		fprintf(stderr, "cannot set environment: %s\n", strerror(errno));
+		exit(1);
+	}
+}
+
 static double timeval_to_seconds(struct timeval t)
 {
 	double seconds;
@@ -240,7 +253,8 @@ static void usage(const char *message)
 	fprintf(stderr, "\tD\tdo decryption (default COPY)\n");
 	fprintf(stderr, "\tE\tdo encryption (default COPY)\n");
 	fprintf(stderr, "\to\tsend output to /dev/null (for directory)\n");
-	fprintf(stderr, "\ta\tselect algorithm -- default aes_256_cbc, use to change to aes_256_gcm");
+	fprintf(stderr, "\ta\tselect algorithm -- default aes_256_cbc, use to change to aes_256_gcm\n");
+	fprintf(stderr, "\tA\tdisable AES engine\n");
 	exit(1);
 
 }
@@ -454,15 +468,15 @@ static void run_threads(void)
 
 
 	fprintf(stderr, "created %d files\n", number_files);
-	fprintf(stderr, "algorithm = %s\n", algorithm == false ? "aes-256-cbc" :
-								"aes-256-gcm");
+	fprintf(stderr, "%s\tthreads = %d\t", algorithm == false ? "aes-256-cbc" :
+								"aes-256-gcm", num_threads);
 	timersub(&end_time, &start_time, &delta_time);
 	microseconds = delta_time.tv_sec * 1000 * 1000;
 	microseconds += delta_time.tv_usec;
 
 	gigabytes = bytes_transferred / (1000 * 1000.0 * 1000.0);
 	seconds = microseconds / (1000.0 * 1000.0);
-	printf("gig/sec = %.3f\n", gigabytes / seconds);
+	printf("gig/sec = %.3f\t", gigabytes / seconds);
 
 	timersub(&end_rusage.ru_utime, &start_rusage.ru_utime, &delta_usertime);
 	timersub(&end_rusage.ru_stime, &start_rusage.ru_stime, &delta_systime);
@@ -486,12 +500,15 @@ int main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv, "at:zod:nhDE");
+		c = getopt(argc, argv, "Aat:zod:nhDE");
 		if(-1 == c) 
 			break; 
 		switch(c) {
 			case 'a':
 				algorithm = true;
+				break;
+			case 'A':
+				disable_aesni = true;
 				break;
 			case 't':
 				num_threads = strtol(optarg, NULL, 10);
@@ -526,6 +543,9 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "threads = %d, /dev/zero = %d\n", num_threads, input_dev_zero);
 
 	create_thread_structure();
+	if(true == disable_aesni)
+		disable_aesni_environment();
+
 	do_work();
 }
 
