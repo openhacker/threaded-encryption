@@ -112,57 +112,68 @@ static double timeval_to_seconds(struct timeval t)
 	return seconds;
 }
 
-#if 0
-static void *copy_file(void *args)
+static bool copy_file(const char *input, const char *output, size_t bytes)
 {
-	struct thread_info *p = (struct thread_info *) args;
+	int input_fd;
+	int output_fd;
+	int bytes_copied = 0;
 
-	while(1) {
-		int bytes_copied = 0;
 
-		pthread_mutex_lock(&p->work_available);
-		
-		while(bytes_copied < p->bytes) {
-			int bytes_read;
-			char buffer[8192];
-
-			bytes_read = read(p->input,  buffer, sizeof buffer);
-			if(bytes_read > 0) {
-				safe_write(p->output, buffer, bytes_read);
-			} else if(0 == bytes_read) {
-				printf("EOF: bytes_copied = %d\n", bytes_copied);
-				break;
-			}
-			bytes_copied += bytes_read;
-		}	
-		p->done = true;
-		pthread_cond_broadcast(&cv);
+	input_fd = open(input, O_RDONLY);
+	if(input_fd < 0) {
+		fprintf(stderr, "cannot open input: %s: %s\n", input, strerror(errno));
+		return false;
 	}
-	return NULL;
+
+	output_fd = open(output, O_WRONLY | O_CREAT, 0644);
+	if(output_fd < 0) {
+		fprintf(stderr, "cannot open output: %s: %s\n", output, strerror(errno));
+		return false;
+	}
+
+	while(bytes_copied < bytes) {
+		int bytes_read;
+		char buffer[8192];
+
+		bytes_read = read(input_fd,  buffer, sizeof buffer);
+		if(bytes_read > 0) {
+			safe_write(output_fd, buffer, bytes_read);
+		} else if(0 == bytes_read) {
+			printf("EOF: bytes_copied = %d\n", bytes_copied);
+			break;
+		}
+		bytes_copied += bytes_read;
+	}
+	return true;
 }
-#endif
 
 
-static void *encrypt_decrypt(void *args)
+static void *encrypt_decrypt_copy(void *args)
 {
 	struct thread_info *aes_info = (struct thread_info *) args;
-	bool encrypt;
-
-	if(aes_info->type_of_op == ENCRYPT)
-		encrypt = true;
-	else	encrypt = false;
 
 	while(1) {
 		bool result; 
 
 		pthread_mutex_lock(&aes_info->work_available);
 		
-		if(encrypt) {
-			result = do_encrypt(aes_info->input, aes_info->output, aes_info->bytes, aes_info->key);
-		} else {
-			result = do_decrypt(aes_info->input, aes_info->output, aes_info->key);
+		switch(aes_info->type_of_op) {
+			case ENCRYPT:
+				result = do_encrypt(aes_info->input, aes_info->output, aes_info->bytes, aes_info->key);
+				break;
+			case DECRYPT:
+				result = do_decrypt(aes_info->input, aes_info->output, aes_info->key);
+				break;
+			case COPY:
+				result = copy_file(aes_info->input, aes_info->output, aes_info->bytes);
+				break;
+			default:
+				abort();
 		}
 
+		if(false == result)  {
+			fprintf(stderr, "problem\n");
+		}
 		aes_info->done = true;
 		pthread_cond_broadcast(&cv);
 	}
@@ -322,19 +333,6 @@ static void run_threads(void)
 	if(directory)
 		prime_opendir();
 
-	switch(type_of_op) {
-#if 0
-		case COPY:
-			func = copy_file;
-			break;
-#endif
-		case ENCRYPT:
-		case DECRYPT:
-			func = encrypt_decrypt;
-			break;
-		default:
-			abort();
-	}
 
 	for(pthread = each_thread; pthread  < each_thread + num_threads; pthread++) {
 		int result;
@@ -348,7 +346,7 @@ static void run_threads(void)
 		pthread->done = false;
 		bytes_transferred +=  pthread->bytes;
 			
-		result = pthread_create(&pthread->thread_info, NULL, func, pthread);
+		result = pthread_create(&pthread->thread_info, NULL, encrypt_decrypt_copy, pthread);
 		assert(result == 0);
 	}
 
