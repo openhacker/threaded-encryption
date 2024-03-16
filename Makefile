@@ -1,5 +1,6 @@
 CC=gcc
-CFLAGS=-pthread -Wall -g -O2
+# OPT= -O2
+CFLAGS=-pthread -Wall -g ${OPT} 
 
 
 all: 	threads
@@ -9,3 +10,4 @@ threads:	threads.o encrypt.o
 
 clean:
 	rm threads
+	rm *.o

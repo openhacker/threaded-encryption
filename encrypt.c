@@ -15,8 +15,11 @@
 
 static const EVP_CIPHER *cipher_type; //  =  EVP_aes_256_gcm();
 
+
 static const int AES_256_BLOCK_SIZE = 32;
+#ifndef AES_BLOCK_SIZE
 static const int AES_BLOCK_SIZE = 16;
+#endif
 
 static bool do_aes(bool encrypt, const int input_fd, const int output_fd, size_t optional_bytes, 
 			const uint8_t aes_key[AES_256_BLOCK_SIZE],
@@ -52,7 +55,7 @@ static bool do_aes(bool encrypt, const int input_fd, const int output_fd, size_t
 		return false;
 	}
 	
-	write(output_fd,  aes_iv, sizeof aes_iv);
+	write(output_fd,  aes_iv, AES_BLOCK_SIZE);
 	
 
 	while(1) {
@@ -77,7 +80,7 @@ static bool do_aes(bool encrypt, const int input_fd, const int output_fd, size_t
 				     ERR_error_string(ERR_get_error(), NULL));
 		     return false;
 		}
-		result == write(output_fd, out_buf, out_len);
+		result = write(output_fd, out_buf, out_len);
 		if(result != out_len) {
 			fprintf(stderr, "problem writing: wanted %d, wrote %d\n", out_len, result);
 			abort();
@@ -92,7 +95,7 @@ static bool do_aes(bool encrypt, const int input_fd, const int output_fd, size_t
 					ERR_error_string(ERR_get_error(), NULL));
 		abort();
 	}
-	write(aes_info->output, out_buf, out_len);
+	write(output_fd, out_buf, out_len);
 	
 	EVP_CIPHER_CTX_cleanup(ctx);
 	return true;
@@ -141,4 +144,8 @@ failure:
 }
 
 
-bool do_decrypt(const char *input, const char *output, 
+bool do_decrypt(const char *input, const char *output, const uint8_t key[AES_256_BLOCK_SIZE])
+{
+	return false;
+}	
+
