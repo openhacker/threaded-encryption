@@ -17,6 +17,7 @@
 #include <openssl/err.h>
 #include <openssl/aes.h>
 #include <openssl/rand.h>
+#include "encrypt.h"
 
 static bool  input_dev_zero = false;
 static bool output_dev_null = false;
@@ -32,8 +33,8 @@ static  pthread_mutex_t able_to_condition = PTHREAD_MUTEX_INITIALIZER;
 static  pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 
 struct thread_info {
-	int input;	// fd
-	int output;	// fd
+	char input[PATH_MAX];	
+	int output[PATH_MAX];	// fd
 	size_t bytes;	
 	struct timeval time_started;
 	pthread_mutex_t work_available;   // unlocked to start work , 
@@ -43,8 +44,6 @@ struct thread_info {
 	enum operation_type type_of_op;
 	/* need the following for encrypt/decrypt */
 	uint8_t key[AES_256_KEY_SIZE];
-	uint8_t iv[AES_BLOCK_SIZE];
-	const EVP_CIPHER *cipher_type;
 };
 
 
@@ -65,9 +64,6 @@ static const uint8_t aes_key[AES_256_KEY_SIZE] =  {125, 223, 230, 12, 126, 250, 
 						199, 180, 198, 100, 210, 118, 164, 7, 169, 232, 
 								181, 172  };
 #endif
-static const uint8_t iv[AES_BLOCK_SIZE] = { 0 };
-
-static bool algorithm = false;	// false is aes-256-cbc, true is aes-256-gcm
 
 
 static char *directory = NULL;
@@ -116,6 +112,7 @@ static double timeval_to_seconds(struct timeval t)
 	return seconds;
 }
 
+#if 0
 static void *copy_file(void *args)
 {
 	struct thread_info *p = (struct thread_info *) args;
@@ -143,12 +140,12 @@ static void *copy_file(void *args)
 	}
 	return NULL;
 }
+#endif
 
 
 static void *encrypt_decrypt(void *args)
 {
 	struct thread_info *aes_info = (struct thread_info *) args;
-	int cipher_block_size = EVP_CIPHER_block_size(aes_info->cipher_type);
 	bool encrypt;
 
 	if(aes_info->type_of_op == ENCRYPT)
@@ -156,65 +153,16 @@ static void *encrypt_decrypt(void *args)
 	else	encrypt = false;
 
 	while(1) {
-		EVP_CIPHER_CTX *ctx;
-		const int BUFSIZE = 8 * 1024;
-		uint8_t in_buf[BUFSIZE];
-		uint8_t out_buf[BUFSIZE + cipher_block_size];
-
-		int total_read = 0;
+		bool result; 
 
 		pthread_mutex_lock(&aes_info->work_available);
-		ctx = EVP_CIPHER_CTX_new();
-		if(!ctx) {
-			fprintf(stderr, "Cannot create CTX\n");
-			abort();
-		}
-
-	    	/* Don't set key or IV right away; we want to check lengths */
-		if(!EVP_CipherInit_ex(ctx, aes_info->cipher_type, NULL, NULL, NULL, encrypt)){
-			fprintf(stderr, "ERROR: EVP_CipherInit_ex failed. OpenSSL error: %s\n", ERR_error_string(ERR_get_error(), NULL));
-			abort();
-		}
-
-#if 0
-    		OPENSSL_assert(EVP_CIPHER_CTX_key_length(ctx) == AES_256_KEY_SIZE);
-		OPENSSL_assert(EVP_CIPHER_CTX_iv_length(ctx) == AES_BLOCK_SIZE);
-#endif
-    /* Now we can set key and IV */
-		if(!EVP_CipherInit_ex(ctx, NULL, NULL, aes_info->key, aes_info->iv, encrypt)){
-		        fprintf(stderr, "ERROR: EVP_CipherInit_ex failed. OpenSSL error: %s\n", ERR_error_string(ERR_get_error(), NULL));
-			abort();
-		}
 		
-
-		while(total_read < aes_info->bytes) {
-			int bytes_read;
-			int out_len;
-
-			bytes_read = read(aes_info->input, in_buf, sizeof in_buf);
-			if(bytes_read < 0) {
-				fprintf(stderr, "problem reading file %s\n", strerror(errno));
-				abort();
-			}
-			if(!EVP_CipherUpdate(ctx, out_buf, &out_len, in_buf,  bytes_read)) {
-       			     fprintf(stderr, "ERROR: EVP_CipherUpdate failed. OpenSSL error: %s\n", 
-					     ERR_error_string(ERR_get_error(), NULL));
-				abort();
-			}
-			safe_write(aes_info->output, out_buf, out_len);
-			total_read +=  bytes_read;
+		if(encrypt) {
+			result = do_encrypt(aes_info->input, aes_info->output, aes_info->bytes, aes_info->key);
+		} else {
+			result = do_decrypt(aes_info->input, aes_info->output, aes_info->key);
 		}
 
-		int out_len;
-
-		if(!EVP_CipherFinal_ex(ctx, out_buf, &out_len)) {
-       			fprintf(stderr, "ERROR: EVP_CipherFinal_ex failed. OpenSSL error: %s\n", 
-						ERR_error_string(ERR_get_error(), NULL));
-			abort();
-		}
-		safe_write(aes_info->output, out_buf, out_len);
-		
-		EVP_CIPHER_CTX_cleanup(ctx);
 		aes_info->done = true;
 		pthread_cond_broadcast(&cv);
 	}
@@ -231,10 +179,6 @@ static void create_thread_structure(void)
 	for(pthread = each_thread; pthread < each_thread + num_threads; pthread++) {
 		pthread->type_of_op = type_of_op;
 		memcpy(pthread->key, aes_key, sizeof aes_key);
-		memcpy(pthread->iv,  iv, sizeof iv);
-		if(algorithm == false)
-			pthread->cipher_type = EVP_aes_256_cbc();
-		else	pthread->cipher_type = EVP_aes_256_gcm();
 	}
 }
 
@@ -298,7 +242,7 @@ static void prime_opendir(void)
  * If  we did, return TRUE.
  * If not, return false;
  */
-static bool next_file(int *input, int *output, size_t *size)
+static bool next_file(char *input,  char *output, size_t *size)
 {
 	if(true == input_dev_zero) {
 		static int num_times = 100;
@@ -308,31 +252,35 @@ static bool next_file(int *input, int *output, size_t *size)
 			return false;
 
 
-		*input = open("/dev/zero", O_RDONLY);
-		assert(*input >= 0);
-		*output = open("/dev/null", O_WRONLY);
+		strcpy(input, "/dev/zero");
+		strcpy(output, "/dev/null");
 		number_files++;
-		assert(*output >= 0);
 		*size = GIG;
 		num_times--;
 	} else {
-		char dest[256];
-		struct stat stat;
+		struct stat statbuf;
 		int result;
 		char *name;
+		char dest[256];
+
 
 		if(number_files >= num_filenames)
 			return false;
 		name = filenames[number_files];
 
-		*input = open(name, O_RDONLY);
-		if(*input < 0)  {
-			fprintf(stderr, "cannot open %s: %s\n", name, strerror(errno));
-			exit(1);
+		strcpy(input, name);
+
+		result = stat(input, &statbuf);
+		if(result < 0) {
+			fprintf(stderr, "cannot stat %s: %s\n", input, strerror(errno));
+			return false;
 		}
+
+		*size = statbuf.st_size;
+
 		number_files++;
 		if(output_dev_null == true)
-			strcpy(dest, "/dev/null");
+			strcpy(output, "/dev/null");
 		else switch(type_of_op) {
 			case COPY:
 				snprintf(dest, sizeof dest, "%s.copy", name);
@@ -348,18 +296,13 @@ static bool next_file(int *input, int *output, size_t *size)
 				abort();
 		}
 				
-		*output = open(dest, O_WRONLY | O_CREAT, 0666);
-		if(*output < 0) {
-			fprintf(stderr, "cannot create %s: %s\n", dest, strerror(errno));
-			exit(1);
-		}
+		strcpy(output, dest);
 
-		result = fstat(*input, &stat);
 		if(result < 0) {
 			fprintf(stderr, "cannot stat %s: %s\n", name, strerror(errno));
 			exit(1);
 		}
-		*size = stat.st_size;
+		*size = statbuf.st_size;
 	}
 	return true;
 }
@@ -380,9 +323,11 @@ static void run_threads(void)
 		prime_opendir();
 
 	switch(type_of_op) {
+#if 0
 		case COPY:
 			func = copy_file;
 			break;
+#endif
 		case ENCRYPT:
 		case DECRYPT:
 			func = encrypt_decrypt;
@@ -421,8 +366,6 @@ static void run_threads(void)
 			if(pthread->done == true) {
 				bool another_file;
 
-				close(pthread->input);
-				close(pthread->output);
 
 
 				another_file = next_file(&pthread->input, &pthread->output, &pthread->bytes);
@@ -468,8 +411,10 @@ static void run_threads(void)
 
 
 	fprintf(stderr, "created %d files\n", number_files);
+#if 0
 	fprintf(stderr, "%s\tthreads = %d\t", algorithm == false ? "aes-256-cbc" :
 								"aes-256-gcm", num_threads);
+#endif
 	timersub(&end_time, &start_time, &delta_time);
 	microseconds = delta_time.tv_sec * 1000 * 1000;
 	microseconds += delta_time.tv_usec;
@@ -500,13 +445,15 @@ int main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv, "Aat:zod:nhDE");
+		c = getopt(argc, argv, "At:zod:nhDE");
 		if(-1 == c) 
 			break; 
 		switch(c) {
+#if 0
 			case 'a':
 				algorithm = true;
 				break;
+#endif
 			case 'A':
 				disable_aesni = true;
 				break;
