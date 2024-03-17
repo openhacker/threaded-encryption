@@ -34,7 +34,7 @@ static  pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 
 struct thread_info {
 	char input[PATH_MAX];	
-	int output[PATH_MAX];	// fd
+	char output[PATH_MAX];	// fd
 	size_t bytes;	
 	struct timeval time_started;
 	pthread_mutex_t work_available;   // unlocked to start work , 
@@ -325,7 +325,6 @@ static void run_threads(void)
 	long long int bytes_transferred = 0;
 	struct timeval start_time;
 	struct rusage start_rusage;
-	void *(*func)(void *);
 
 	gettimeofday(&start_time, NULL);
 	getrusage(RUSAGE_SELF,  &start_rusage);
@@ -341,7 +340,7 @@ static void run_threads(void)
 
 		result = pthread_mutex_lock(&pthread->work_available);
 		assert(result == 0);
-		next_file(&pthread->input, &pthread->output, &pthread->bytes);
+		next_file(pthread->input, pthread->output, &pthread->bytes);
 		
 		pthread->done = false;
 		bytes_transferred +=  pthread->bytes;
@@ -366,7 +365,7 @@ static void run_threads(void)
 
 
 
-				another_file = next_file(&pthread->input, &pthread->output, &pthread->bytes);
+				another_file = next_file(pthread->input, pthread->output, &pthread->bytes);
 
 				if(false == another_file) {
 					pthread->terminated = true;
