@@ -55,7 +55,7 @@ static bool do_aes(bool encrypt, const int input_fd, const int output_fd, size_t
 		return false;
 	}
 	
-	write(output_fd,  aes_iv, AES_BLOCK_SIZE);
+//	write(output_fd,  aes_iv, AES_BLOCK_SIZE);
 	
 
 	while(1) {
@@ -103,7 +103,17 @@ static bool do_aes(bool encrypt, const int input_fd, const int output_fd, size_t
 }
 
 
-
+static bool construct_iv(char *iv, int size)
+{
+#ifdef ZERO_IV
+	memset(iv, 0, size);
+#else
+	if(getrandom(iv, size, 0))
+		return false;
+#endif
+	return true;
+}
+	
 bool do_encrypt(const char *input, const char *output, size_t bytes, const uint8_t key[AES_256_BLOCK_SIZE])
 {
 	int input_fd;
@@ -128,8 +138,8 @@ bool do_encrypt(const char *input, const char *output, size_t bytes, const uint8
 		return false;
 	}
 
-	retval = getrandom(iv, sizeof iv, 0);
-	if(retval < 0) {
+	result = construct_iv(iv, sizeof iv);	
+	if(result == false) {
 		fprintf(stderr, "cannot get random iv: %s\n", strerror(errno));
 		goto failure;
 	}

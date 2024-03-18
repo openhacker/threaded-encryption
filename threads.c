@@ -291,7 +291,7 @@ static bool next_file(char *input,  char *output, size_t *size)
 
 		number_files++;
 		if(output_dev_null == true)
-			strcpy(output, "/dev/null");
+			strcpy(dest, "/dev/null");
 		else switch(type_of_op) {
 			case COPY:
 				snprintf(dest, sizeof dest, "%s.copy", name);
