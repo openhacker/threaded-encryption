@@ -25,6 +25,7 @@ enum operation_type { ENCRYPT, DECRYPT, COPY };
 static int number_files = 0;	// files written
 
 static enum operation_type type_of_op = COPY;
+static bool algorithm = false;
 
 #define AES_256_KEY_SIZE    32
 #define AES_BLOCK_SIZE	    16
@@ -208,7 +209,7 @@ static void usage(const char *message)
 	fprintf(stderr, "\tD\tdo decryption (default COPY)\n");
 	fprintf(stderr, "\tE\tdo encryption (default COPY)\n");
 	fprintf(stderr, "\to\tsend output to /dev/null (for directory)\n");
-	fprintf(stderr, "\ta\tselect algorithm -- default aes_256_cbc, use to change to aes_256_gcm\n");
+	fprintf(stderr, "\ta\tselect algorithm -- default aes_256_gcm, use to change to aes_256_cbc\n");
 	fprintf(stderr, "\tA\tdisable AES engine\n");
 	exit(1);
 
@@ -408,10 +409,8 @@ static void run_threads(void)
 
 
 	fprintf(stderr, "created %d files\n", number_files);
-#if 0
-	fprintf(stderr, "%s\tthreads = %d\t", algorithm == false ? "aes-256-cbc" :
+	fprintf(stderr, "%s\tthreads = %d\t", algorithm == true ? "aes-256-cbc" :
 								"aes-256-gcm", num_threads);
-#endif
 	timersub(&end_time, &start_time, &delta_time);
 	microseconds = delta_time.tv_sec * 1000 * 1000;
 	microseconds += delta_time.tv_usec;
@@ -442,15 +441,14 @@ int main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv, "At:zod:nhDE");
+		c = getopt(argc, argv, "aAt:zod:nhDE");
 		if(-1 == c) 
 			break; 
 		switch(c) {
-#if 0
 			case 'a':
 				algorithm = true;
+				select_cipher_type(AES_256_CBC);
 				break;
-#endif
 			case 'A':
 				disable_aesni = true;
 				break;

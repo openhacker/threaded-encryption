@@ -10,5 +10,12 @@ bool do_encrypt(const char *input_file, const char *output_file, size_t optional
 
 bool do_decrypt(const char *input_file, const char *output_file, const uint8_t key_256[32]);
 
+enum cipher_type {
+	AES_256_GCM,
+	AES_256_CBC,
+	AES_256_CTR
+};
+
+void select_cipher_type(enum cipher_type type);
 
 #endif

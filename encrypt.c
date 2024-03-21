@@ -14,6 +14,7 @@
 
 
 static const EVP_CIPHER *cipher_type; //  =  EVP_aes_256_gcm();
+static bool authenticated = false;	// depends on the cipher type 
 
 
 static const int AES_256_BLOCK_SIZE = 32;
@@ -108,7 +109,7 @@ static bool construct_iv(char *iv, int size)
 #ifdef ZERO_IV
 	memset(iv, 0, size);
 #else
-	if(getrandom(iv, size, 0))
+	if(getrandom(iv, size, 0) != size)
 		return false;
 #endif
 	return true;
@@ -121,8 +122,6 @@ bool do_encrypt(const char *input, const char *output, size_t bytes, const uint8
 	int retval;
 	bool result = false;	// default failure
 	char iv[AES_BLOCK_SIZE];
-	cipher_type = EVP_aes_256_gcm();
-	
 
 
 	input_fd = open(input, O_RDONLY);
@@ -156,6 +155,80 @@ failure:
 
 bool do_decrypt(const char *input, const char *output, const uint8_t key[AES_256_BLOCK_SIZE])
 {
-	return false;
+
+	int input_fd;
+	int output_fd;
+	int retval;
+	bool result = false;	// default failure
+	char iv[AES_BLOCK_SIZE];
+
+	input_fd = open(input, O_RDONLY);
+	if(input_fd < 0) {
+		fprintf(stderr, "cannot open input: %s: %s\n", input, strerror(errno));
+		return false;
+	}
+
+	output_fd = open(output, O_WRONLY | O_CREAT, 0666);
+	if(output_fd < 0) {
+		fprintf(stderr, "cannot open output %s: %s\n", output, strerror(errno));
+		close(input_fd);
+		return false;
+	}
+
+	if(result == false) {
+		fprintf(stderr, "cannot get random iv: %s\n", strerror(errno));
+		goto failure;
+	}
+
+#ifdef SAVE_IV
+	retval = read(input_fd, iv,  sizeof iv);
+	if(retval != sizeof iv) {
+		fprintf(stderr, "can't read  saved iv\n");
+		exit(1);
+	}
+#else
+
+#ifndef ZERO_IV
+	printf("haven't defined ZERO_IV\n");
+	exit(1);
+#endif
+
+	memset(iv, 0, sizeof iv);
+#endif
+
+	result = do_aes(false, input_fd, output_fd, 0, key, iv);
+
+failure:
+	close(input_fd);
+	close(output_fd);
+	return result;
+
 }	
 
+void select_cipher_type(enum cipher_type type)
+{
+	switch(type) {
+		case AES_256_GCM:
+			cipher_type = EVP_aes_256_gcm();
+			authenticated = true;
+			break;
+		case AES_256_CBC:
+			cipher_type = EVP_aes_256_cbc();
+			authenticated = false;
+			break;
+		case AES_256_CTR:
+			cipher_type = EVP_aes_256_ctr();
+			authenticated = false;
+			break;
+		default:
+			printf("illegal cipher type\n");
+			abort();
+	}
+	
+
+}
+
+static __attribute__((constructor)) void init(void)
+{
+	select_cipher_type(AES_256_GCM);
+}
