@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
+#include <assert.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <sys/random.h>
@@ -7,6 +8,8 @@
 #include <openssl/err.h>
 #include <openssl/aes.h>
 #include <openssl/rand.h>
+#include <openssl/bio.h>
+#include <openssl/core_names.h>
 #include <string.h>
 #include <errno.h>
 #include "encrypt.h"
@@ -15,11 +18,270 @@
 
 static const EVP_CIPHER *cipher_type; //  =  EVP_aes_256_gcm();
 static bool authenticated = false;	// depends on the cipher type 
+static enum cipher_type enum_cipher;
 
 
 static const int AES_256_BLOCK_SIZE = 32;
 #ifndef AES_BLOCK_SIZE
 static const int AES_BLOCK_SIZE = 16;
+#endif
+
+
+void handleErrors(void)
+{
+    ERR_print_errors_fp(stderr);
+    abort();
+}
+
+
+/* from demos/cipher/aesgcm.c */
+static bool aes_gcm_encrypt(int input_fd, int output_fd, 
+			int optional_bytes, 
+			unsigned char *aad, int aad_len,
+			unsigned char *gcm_key, 	/* 32 chars */
+			unsigned char *gcm_iv, size_t iv_len)
+{
+
+   bool ret = false;
+    EVP_CIPHER_CTX *ctx;
+    unsigned char temp_buf[1024];
+    int tmplen;
+//    int outlen, tmplen;
+ //   size_t gcm_ivlen = sizeof(gcm_iv);
+    unsigned char outtag[16];
+    OSSL_PARAM params[2] = {
+        OSSL_PARAM_END, OSSL_PARAM_END
+    };
+    size_t cipher_block_size = EVP_CIPHER_block_size(cipher_type);
+    size_t total_bytes_read = 0;
+
+
+    /* Create a context for the encrypt operation */
+    if ((ctx = EVP_CIPHER_CTX_new()) == NULL)
+        goto err;
+
+#if 0
+    /* Fetch the cipher implementation */
+    if ((cipher = EVP_CIPHER_fetch(libctx, "AES-256-GCM", propq)) == NULL)
+        goto err;
+#endif
+
+    /* Set IV length if default 96 bits is not appropriate */
+    params[0] = OSSL_PARAM_construct_size_t(OSSL_CIPHER_PARAM_AEAD_IVLEN,
+                                            &iv_len);
+
+    /*
+     * Initialise an encrypt operation with the cipher/mode, key, IV and
+     * IV length parameter.
+     * For demonstration purposes the IV is being set here. In a compliant
+     * application the IV would be generated internally so the iv passed in
+     * would be NULL. 
+     */
+    if (!EVP_EncryptInit_ex2(ctx, cipher_type, gcm_key, gcm_iv, params))
+        goto err;
+
+#if 0
+    /* Zero or more calls to specify any AAD */
+    if (!EVP_EncryptUpdate(ctx, NULL, &outlen, gcm_aad, sizeof(gcm_aad)))
+        goto err;
+#endif
+
+	while(1) {
+		static const size_t BUFFER_SIZE = 8 * 1024;
+		unsigned char inbuf[BUFFER_SIZE];
+		unsigned char outbuf[BUFFER_SIZE + cipher_block_size];
+		int bytes_read;
+		int outlen;
+		int bytes_written;
+
+		bytes_read = read(input_fd, inbuf, sizeof inbuf);
+		if(!bytes_read)
+			break;
+		else if(bytes_read < 0) {
+			fprintf(stderr, "problem with read: %s\n", strerror(errno));
+			goto err;
+		}
+
+		total_bytes_read += bytes_read;
+		if(optional_bytes && total_bytes_read > optional_bytes)
+			break;
+
+		/* Encrypt plaintext */
+		if (!EVP_EncryptUpdate(ctx, outbuf, &outlen, inbuf, bytes_read))
+       			 goto err;
+
+		/* Output encrypted block */
+		bytes_written = write(output_fd, outbuf, outlen);
+		if(bytes_written < 0) {
+			fprintf(stderr, "problem with write: %s\n", strerror(errno));
+			goto err;
+		} else if(bytes_written != outlen) {
+			fprintf(stderr, "problem with write: wrote %d bytes, wanted %d\n", bytes_written,
+								outlen);
+			goto err;
+		}
+	}
+		
+
+    /* Finalise: note get no output for GCM */
+    if (!EVP_EncryptFinal_ex(ctx, temp_buf, &tmplen))
+        goto err;
+
+    assert(tmplen == 0);
+
+    /* Get tag */
+    params[0] = OSSL_PARAM_construct_octet_string(OSSL_CIPHER_PARAM_AEAD_TAG,
+                                                  outtag, 16);
+
+    if (!EVP_CIPHER_CTX_get_params(ctx, params))
+        goto err;
+
+    /* Output tag */
+    printf("Tag:\n");
+    BIO_dump_fp(stdout, outtag, 16);
+
+    ret = true;
+err:
+    if (ret == false)
+        ERR_print_errors_fp(stderr);
+
+//    EVP_CIPHER_free(cipher);
+    EVP_CIPHER_CTX_free(ctx);
+
+    return ret;
+}
+
+			
+#if 0
+static int gcm_encrypt(int input_fd, int output_fd,
+		int bytes,
+                unsigned char *aad, int aad_len,
+                unsigned char *key,
+                unsigned char *iv, int iv_len)
+{
+    EVP_CIPHER_CTX *ctx;
+    int len;
+    int ciphertext_len;
+
+
+    /* Create and initialise the context */
+    if(!(ctx = EVP_CIPHER_CTX_new())) 
+        handleErrors();
+
+    /* Initialise the encryption operation. */
+    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL))
+        handleErrors();
+
+    /*
+     * Set IV length if default 12 bytes (96 bits) is not appropriate
+     */
+    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL))
+        handleErrors();
+
+    /* Initialise key and IV */
+    if(1 != EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv))
+        handleErrors();
+
+    /*
+     * Provide any AAD data. This can be called zero or more times as
+     * required
+     */
+    if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
+        handleErrors();
+
+    /*
+     * Provide the message to be encrypted, and obtain the encrypted output.
+     * EVP_EncryptUpdate can be called multiple times if necessary
+     */
+    if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
+        handleErrors();
+    ciphertext_len = len;
+
+    /*
+     * Finalise the encryption. Normally ciphertext bytes may be written at
+     * this stage, but this does not occur in GCM mode
+     */
+    if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
+        handleErrors();
+    ciphertext_len += len;
+
+    /* Get the tag */
+    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag))
+        handleErrors();
+
+    /* Clean up */
+    EVP_CIPHER_CTX_free(ctx);
+
+    return ciphertext_len;
+}
+                unsigned char *aad, int aad_len,
+                unsigned char *key,
+                unsigned char *iv,
+                unsigned char *ciphertext,
+                unsigned char *tag)
+{
+    EVP_CIPHER_CTX *ctx;
+
+    int len;
+
+    int ciphertext_len;
+
+
+    /* Create and initialise the context */
+    if(!(ctx = EVP_CIPHER_CTX_new()))
+        handleErrors();
+
+    /* Initialise the encryption operation. */
+    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_ccm(), NULL, NULL, NULL))
+        handleErrors();
+
+    /*
+     * Setting IV len to 7. Not strictly necessary as this is the default
+     * but shown here for the purposes of this example.
+     */
+    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, 7, NULL))
+        handleErrors();
+
+    /* Set tag length */
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG, 14, NULL);
+
+    /* Initialise key and IV */
+    if(1 != EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv))
+        handleErrors();
+
+    /* Provide the total plaintext length */
+    if(1 != EVP_EncryptUpdate(ctx, NULL, &len, NULL, plaintext_len))
+        handleErrors();
+
+    /* Provide any AAD data. This can be called zero or one times as required */
+    if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
+        handleErrors();
+
+    /*
+     * Provide the message to be encrypted, and obtain the encrypted output.
+     * EVP_EncryptUpdate can only be called once for this.
+     */
+    if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
+        handleErrors();
+    ciphertext_len = len;
+
+    /*
+     * Finalise the encryption. Normally ciphertext bytes may be written at
+     * this stage, but this does not occur in CCM mode.
+     */
+    if(1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
+        handleErrors();
+    ciphertext_len += len;
+
+    /* Get the tag */
+    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_GET_TAG, 14, tag))
+        handleErrors();
+
+    /* Clean up */
+    EVP_CIPHER_CTX_free(ctx);
+
+    return ciphertext_len;
+}
 #endif
 
 static bool do_aes(bool encrypt, const int input_fd, const int output_fd, size_t optional_bytes, 
@@ -55,8 +317,6 @@ static bool do_aes(bool encrypt, const int input_fd, const int output_fd, size_t
 		fprintf(stderr, "ERROR: EVP_CipherInit_ex failed. OpenSSL error: %s\n", ERR_error_string(ERR_get_error(), NULL));
 		return false;
 	}
-	
-//	write(output_fd,  aes_iv, AES_BLOCK_SIZE);
 	
 
 	while(1) {
@@ -121,7 +381,8 @@ bool do_encrypt(const char *input, const char *output, size_t bytes, const uint8
 	int output_fd;
 	int retval;
 	bool result = false;	// default failure
-	char iv[AES_BLOCK_SIZE];
+//	char iv[AES_BLOCK_SIZE];
+	char iv[12];
 
 
 	input_fd = open(input, O_RDONLY);
@@ -143,7 +404,20 @@ bool do_encrypt(const char *input, const char *output, size_t bytes, const uint8
 		goto failure;
 	}
 
-	result = do_aes(true, input_fd, output_fd, bytes, key, iv);
+#ifdef SAVE_IV
+	write(output_fd, iv, sizeof iv);
+#endif
+	switch(enum_cipher) {
+		case  AES_256_GCM:
+			result = aes_gcm_encrypt(input_fd,  output_fd, bytes, NULL, 0, key, iv, sizeof iv);
+			break;
+		case  AES_256_CBC:
+//			result = do_cbc(true, input_fd, output_fd, bytes, key, iv);
+//			break;
+		default:
+			fprintf(stderr, "unknown cipher\n");
+			abort();
+	}
 
 failure:
 	close(input_fd);
@@ -175,10 +449,6 @@ bool do_decrypt(const char *input, const char *output, const uint8_t key[AES_256
 		return false;
 	}
 
-	if(result == false) {
-		fprintf(stderr, "cannot get random iv: %s\n", strerror(errno));
-		goto failure;
-	}
 
 #ifdef SAVE_IV
 	retval = read(input_fd, iv,  sizeof iv);
@@ -225,6 +495,7 @@ void select_cipher_type(enum cipher_type type)
 			abort();
 	}
 	
+	enum_cipher = type;
 
 }
 
