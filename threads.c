@@ -60,10 +60,14 @@ static const uint8_t aes_key[AES_256_KEY_SIZE] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 						};
 
 #else
+#if 0
 static const uint8_t aes_key[AES_256_KEY_SIZE] =  {125, 223, 230, 12, 126, 250, 227, 251, 12, 184,
        						136, 43, 108, 184, 162, 191, 54, 101, 87, 212, 
 						199, 180, 198, 100, 210, 118, 164, 7, 169, 232, 
 								181, 172  };
+#else
+static const uint8_t aes_key[AES_256_KEY_SIZE] = { 0 };
+#endif
 #endif
 
 
