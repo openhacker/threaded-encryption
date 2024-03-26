@@ -1,9 +1,10 @@
 # -DZERO_IV -- use a zero IV all the time
 #  -DSAVE_IV -- save IV in file (needed for random IV)
 # use XCFLAGS or DEFINE for this
-DEFINES=-DZERO_IV
+DEFINES += -DSAVE_IV
+DEFINES +=-DZERO_IV
 CC=gcc
-# OPT= -O2
+OPT= -O2
 CFLAGS=-pthread -Wall -g ${OPT}  ${XCFLAGS} ${DEFINES}
 
 
