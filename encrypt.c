@@ -30,8 +30,9 @@ void handleErrors(void)
 }
 
 /* from demos/cipher/aesgcm.c */
-static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, unsigned char *aad, int aad_len, unsigned char *gcm_key,	/* 32 chars */
-			    unsigned char *gcm_iv, size_t iv_len)
+static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, unsigned char *aad, int aad_len, 
+					unsigned char *gcm_key,	/* 32 chars */
+				    	unsigned char *gcm_iv, size_t iv_len)
 {
 
 	bool ret = false;
@@ -128,9 +129,11 @@ static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, uns
 	if (!EVP_CIPHER_CTX_get_params(ctx, params))
 		goto err;
 
+#if 0
 	/* Output tag */
 	printf("Tag:\n");
 	BIO_dump_fp(stdout, outtag, 16);
+#endif
 
 	write(output_fd, outtag, sizeof outtag);
 
@@ -139,7 +142,9 @@ static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, uns
 	if (ret == false)
 		ERR_print_errors_fp(stderr);
 
-//    EVP_CIPHER_free(cipher);
+#if 0
+	EVP_CIPHER_free(cipher);
+#endif
 	EVP_CIPHER_CTX_free(ctx);
 
 	return ret;
@@ -158,7 +163,8 @@ int aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int aad_len
 	size_t total_bytes_read = 0;
 	size_t total_bytes_desired;
 	int count;
-	off_t start_of_file;
+	off_t start_of_data;
+	off_t off_result;
 	unsigned char buffer[1024];
 	int buflen;
 
@@ -182,7 +188,11 @@ int aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int aad_len
 	if (!EVP_DecryptInit_ex2(ctx, cipher_type, gcm_key, gcm_iv, params))
 		goto err;
 
+	
+	start_of_data = lseek(input_fd, 0, SEEK_CUR);
+//	fprintf(stderr, "current point = %ld\n", start_of_data);
 	total_bytes_desired = lseek(input_fd, -16, SEEK_END);
+	total_bytes_desired -= start_of_data;
 
 	if (total_bytes_desired < 0) {
 		fprintf(stderr, "Cannot lseek tag, %s\n", strerror(errno));
@@ -196,8 +206,8 @@ int aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int aad_len
 	}
 
 	/* go back to beginning of file */
-	start_of_file = lseek(input_fd, 0, SEEK_SET);
-	if (start_of_file < 0) {
+	off_result = lseek(input_fd, start_of_data, SEEK_SET);
+	if (off_result < 0) {
 		fprintf(stderr, "cannot rewind file: %s\n", strerror(errno));
 		goto err;
 	}
@@ -246,8 +256,10 @@ int aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int aad_len
 	 * Print out return value. If this is not successful authentication
 	 * failed and plaintext is not trustworthy.
 	 */
-	printf("Tag Verify %s, buflen = %d\n",
-	       rv > 0 ? "Successful!" : "Failed!", buflen);
+	if(rv == 0) {
+		printf("Tag Verify failed\n");
+		goto err;
+	}
 
 	ret = true;
  err:
@@ -387,14 +399,18 @@ unsigned char *aad, int aad_len,
 	 return ciphertext_len;
 }
 #endif
+
+
+
+#if 0
 static bool do_aes(bool encrypt, const int input_fd, const int output_fd,
 		   size_t optional_bytes,
 		   const uint8_t aes_key[AES_256_BLOCK_SIZE],
-		   const uint8_t aes_iv[AES_BLOCK_SIZE]) {
+		   const uint8_t aes_iv[AES_BLOCK_SIZE])
+{
 	EVP_CIPHER_CTX *ctx;
 	const int BUFSIZE = 8 * 1024;
 	int cipher_block_size = EVP_CIPHER_block_size(cipher_type);
-	;
 	uint8_t in_buf[BUFSIZE];
 	uint8_t out_buf[BUFSIZE + cipher_block_size];
 	int total_read = 0;
@@ -474,8 +490,11 @@ static bool do_aes(bool encrypt, const int input_fd, const int output_fd,
 	return true;
 
 }
+#endif
 
-static bool construct_iv(char *iv, int size) {
+
+static bool construct_iv(char *iv, int size) 
+{
 #ifdef ZERO_IV
 	memset(iv, 0, size);
 #else
@@ -483,8 +502,12 @@ static bool construct_iv(char *iv, int size) {
 		return false;
 #endif
 	return true;
-} bool do_encrypt(const char *input, const char *output, size_t bytes,
-		  const uint8_t key[AES_256_BLOCK_SIZE]) {
+}
+
+
+bool do_encrypt(const char *input, const char *output, size_t bytes,
+		  const uint8_t key[AES_256_BLOCK_SIZE]) 
+{
 	int input_fd;
 	int output_fd;
 	int retval;
@@ -537,13 +560,13 @@ static bool construct_iv(char *iv, int size) {
 }
 
 bool do_decrypt(const char *input, const char *output,
-		const uint8_t key[AES_256_BLOCK_SIZE]) {
+		const uint8_t key[AES_256_BLOCK_SIZE])
+{
 
 	int input_fd;
 	int output_fd;
 	int retval;
 	bool result = false;	// default failure
-//      char iv[AES_BLOCK_SIZE];
 	unsigned char iv[12];
 
 	 input_fd = open(input, O_RDONLY);
@@ -579,8 +602,7 @@ bool do_decrypt(const char *input, const char *output,
 
 	switch (enum_cipher) {
 	case AES_256_GCM:
-		result =
-		    aes_gcm_decrypt(input_fd, output_fd, NULL, 0, key, iv,
+		result = aes_gcm_decrypt(input_fd, output_fd, NULL, 0, key, iv,
 				    sizeof iv);
 		break;
 	case AES_256_CBC:
@@ -598,25 +620,33 @@ bool do_decrypt(const char *input, const char *output,
 
 }
 
-void select_cipher_type(enum cipher_type type) {
+void select_cipher_type(enum cipher_type type)
+{
 	switch (type) {
-	case AES_256_GCM:
-		cipher_type = EVP_aes_256_gcm();
-		authenticated = true;
-		break;
-		case AES_256_CBC:cipher_type = EVP_aes_256_cbc();
-		authenticated = false;
-		break;
-		case AES_256_CTR:cipher_type = EVP_aes_256_ctr();
-		authenticated = false;
-		break;
-		default:printf("illegal cipher type\n");
-		abort();
-	} enum_cipher = type;
+		case AES_256_GCM:
+			cipher_type = EVP_aes_256_gcm();
+			authenticated = true;
+			break;
+#if 0
+		case AES_256_CBC:
+			cipher_type = EVP_aes_256_cbc();
+			authenticated = false;
+			break;
+		case AES_256_CTR:
+			cipher_type = EVP_aes_256_ctr();
+			authenticated = false;
+			break;
+#endif
+		default:
+			printf("illegal cipher type\n");
+			abort();
+	}
+       	enum_cipher = type;
 
 }
 
 static __attribute__((constructor))
-void init(void) {
+void init(void) 
+{
 	select_cipher_type(AES_256_GCM);
 }
