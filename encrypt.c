@@ -63,6 +63,7 @@ static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, uns
 	/*
 	 * Initialise an encrypt operation with the cipher/mode, key, IV and
 	 * IV length parameter.
+	 * ml -- copies from demo -- don't fully understand this
 	 * For demonstration purposes the IV is being set here. In a compliant
 	 * application the IV would be generated internally so the iv passed in
 	 * would be NULL. 

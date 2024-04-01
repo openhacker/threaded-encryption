@@ -96,15 +96,20 @@ static void safe_write(int fd, char *buffer, int size)
 
 static bool disable_aesni = false;
 
-static void disable_aesni_environment(void)
+static bool disable_aesni_environment(void)
 {
+
 	int result;
+
+	if(getenv("OPENSSL_ia32cap"))
+		return false;
 
 	result = setenv("OPENSSL_ia32cap", "~0x200000200000000", 0);
 	if(result < 0) {
 		fprintf(stderr, "cannot set environment: %s\n", strerror(errno));
 		exit(1);
 	}
+	return true;
 }
 
 static double timeval_to_seconds(struct timeval t)
@@ -486,11 +491,20 @@ int main(int argc, char *argv[])
 		}	
 
 	}
+	if(true == disable_aesni) {
+		if(disable_aesni_environment() == true) {
+			fprintf(stderr, "reexecing program\n");
+			execv(argv[0], argv);
+			fprintf(stderr, "exec failed: %s\n", strerror(errno));
+			exit(1);
+		} 
+		fprintf(stderr, "set OPENSSL_ia32cap already\n");
+	}
+		
+
 	fprintf(stderr, "threads = %d, /dev/zero = %d\n", num_threads, input_dev_zero);
 
 	create_thread_structure();
-	if(true == disable_aesni)
-		disable_aesni_environment();
 
 	do_work();
 }
