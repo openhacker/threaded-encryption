@@ -16,6 +16,19 @@ enum cipher_type {
 	AES_256_CTR
 };
 
+
+enum encrypt_result {
+	ENCRYPT_SUCESSFUL,
+	ENCRYPT_WRITE_FAILED
+
+	
+};
+
+enum decreypt_result {
+	DECRYPT_SUCCESSFUL
+};
+
+
 void select_cipher_type(enum cipher_type type);
 
 #endif

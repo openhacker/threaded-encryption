@@ -7,6 +7,7 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/aes.h>
+#include <openssl/sha.h>
 #include <openssl/rand.h>
 #include <openssl/bio.h>
 #include <openssl/core_names.h>
@@ -22,6 +23,8 @@ static const int AES_256_BLOCK_SIZE = 32;
 #ifndef AES_BLOCK_SIZE
 static const int AES_BLOCK_SIZE = 16;
 #endif
+
+static const char magic[4] = { 'H', 'Y', 'P', 'N' };
 
 void handleErrors(void)
 {
@@ -50,11 +53,7 @@ static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, uns
 	if ((ctx = EVP_CIPHER_CTX_new()) == NULL)
 		goto err;
 
-#if 0
-	/* Fetch the cipher implementation */
-	if ((cipher = EVP_CIPHER_fetch(libctx, "AES-256-GCM", propq)) == NULL)
-		goto err;
-#endif
+
 
 	/* Set IV length if default 96 bits is not appropriate */
 	params[0] = OSSL_PARAM_construct_size_t(OSSL_CIPHER_PARAM_AEAD_IVLEN,
@@ -151,7 +150,7 @@ static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, uns
 	return ret;
 }
 
-int aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int aad_len, unsigned char *gcm_key,	// 32 chars
+static bool aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int aad_len, unsigned char *gcm_key,	// 32 chars
 		    unsigned char *gcm_iv, size_t gcm_ivlen)
 {
 	bool ret = false;
@@ -272,139 +271,10 @@ int aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int aad_len
 	return ret;
 }
 
-#if 0
-static int gcm_encrypt(int input_fd, int output_fd,
-		       int bytes,
-		       unsigned char *aad, int aad_len,
-		       unsigned char *key, unsigned char *iv, int iv_len)
-{
-	EVP_CIPHER_CTX *ctx;
-	int len;
-	int ciphertext_len;
-
-	/* Create and initialise the context */
-	if (!(ctx = EVP_CIPHER_CTX_new()))
-		handleErrors();
-
-	/* Initialise the encryption operation. */
-	if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL))
-		handleErrors();
-
-	/*
-	 * Set IV length if default 12 bytes (96 bits) is not appropriate
-	 */
-	if (1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, iv_len, NULL))
-		handleErrors();
-
-	/* Initialise key and IV */
-	if (1 != EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv))
-		handleErrors();
-
-	/*
-	 * Provide any AAD data. This can be called zero or more times as
-	 * required
-	 */
-	if (1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
-		handleErrors();
-
-	/*
-	 * Provide the message to be encrypted, and obtain the encrypted output.
-	 * EVP_EncryptUpdate can be called multiple times if necessary
-	 */
-	if (1 !=
-	    EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
-		handleErrors();
-	ciphertext_len = len;
-
-	/*
-	 * Finalise the encryption. Normally ciphertext bytes may be written at
-	 * this stage, but this does not occur in GCM mode
-	 */
-	if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
-		handleErrors();
-	ciphertext_len += len;
-
-	/* Get the tag */
-	if (1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag))
-		handleErrors();
-
-	/* Clean up */
-	EVP_CIPHER_CTX_free(ctx);
-
-	return ciphertext_len;
-}
-
-unsigned char *aad, int aad_len,
-    unsigned char *key,
-    unsigned char *iv, unsigned char *ciphertext, unsigned char *tag) {
-	EVP_CIPHER_CTX *ctx;
-
-	int len;
-
-	int ciphertext_len;
-
-	/* Create and initialise the context */
-	if (!(ctx = EVP_CIPHER_CTX_new()))
-		handleErrors();
-
-	/* Initialise the encryption operation. */
-	if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_ccm(), NULL, NULL, NULL))
-		 handleErrors();
-
-	/*
-	 * Setting IV len to 7. Not strictly necessary as this is the default
-	 * but shown here for the purposes of this example.
-	 */
-	if (1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, 7, NULL))
-		 handleErrors();
-
-	/* Set tag length */
-	 EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG, 14, NULL);
-
-	/* Initialise key and IV */
-	if (1 != EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv))
-		 handleErrors();
-
-	/* Provide the total plaintext length */
-	if (1 != EVP_EncryptUpdate(ctx, NULL, &len, NULL, plaintext_len))
-		 handleErrors();
-
-	/* Provide any AAD data. This can be called zero or one times as required */
-	if (1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
-		 handleErrors();
-
-	/*
-	 * Provide the message to be encrypted, and obtain the encrypted output.
-	 * EVP_EncryptUpdate can only be called once for this.
-	 */
-	if (1 !=
-	    EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
-		 handleErrors();
-	 ciphertext_len = len;
-
-	/*
-	 * Finalise the encryption. Normally ciphertext bytes may be written at
-	 * this stage, but this does not occur in CCM mode.
-	 */
-	if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len))
-		 handleErrors();
-	 ciphertext_len += len;
-
-	/* Get the tag */
-	if (1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_GET_TAG, 14, tag))
-		 handleErrors();
-
-	/* Clean up */
-	 EVP_CIPHER_CTX_free(ctx);
-
-	 return ciphertext_len;
-}
-#endif
-
 
 
 #if 0
-static bool do_aes(bool encrypt, const int input_fd, const int output_fd,
+static bool do_cbc(bool encrypt, const int input_fd, const int output_fd,
 		   size_t optional_bytes,
 		   const uint8_t aes_key[AES_256_BLOCK_SIZE],
 		   const uint8_t aes_iv[AES_BLOCK_SIZE])
@@ -511,12 +381,14 @@ bool do_encrypt(const char *input, const char *output, size_t bytes,
 {
 	int input_fd;
 	int output_fd;
-	int retval;
+	// int retval;
 	bool result = false;	// default failure
-//      char iv[AES_BLOCK_SIZE];
 	char iv[12];
+	size_t output_bytes;
+	uint8_t sha_value[SHA256_DIGEST_LENGTH];
+	uint8_t  *sha;
 
-	 input_fd = open(input, O_RDONLY);
+	input_fd = open(input, O_RDONLY);
 	if (input_fd < 0) {
 		fprintf(stderr, "cannot open input: %s: %s\n", input,
 			strerror(errno));
@@ -531,6 +403,24 @@ bool do_encrypt(const char *input, const char *output, size_t bytes,
 		return false;
 	}
 
+	output_bytes = write(output_fd, magic, sizeof magic);
+	if(output_bytes != sizeof magic) {
+		fprintf(stderr, "cannot write magic\n");
+		goto failure;
+	}
+
+	sha = SHA256(key, AES_256_BLOCK_SIZE, sha_value);
+	if(!sha) {
+		fprintf(stderr, "SHA256 didn't work\n");
+		goto failure;
+	}
+
+	output_bytes = write(output_fd, sha_value, sizeof sha_value);
+	if(output_bytes != sizeof sha_value) {
+		fprintf(stderr, "problem writing SHA256\n");
+		goto failure;
+	}
+	
 	result = construct_iv(iv, sizeof iv);
 	if (result == false) {
 		fprintf(stderr, "cannot get random iv: %s\n", strerror(errno));
@@ -569,6 +459,10 @@ bool do_decrypt(const char *input, const char *output,
 	int retval;
 	bool result = false;	// default failure
 	unsigned char iv[12];
+	uint8_t magic_read[sizeof magic];
+	size_t bytes;
+	uint8_t sha_read[SHA256_DIGEST_LENGTH];
+	uint8_t sha_computed[SHA256_DIGEST_LENGTH];	
 
 	 input_fd = open(input, O_RDONLY);
 	if (input_fd < 0) {
@@ -584,6 +478,30 @@ bool do_decrypt(const char *input, const char *output,
 		close(input_fd);
 		return false;
 	}
+
+	bytes = read(input_fd, magic_read, sizeof magic_read);
+	if(bytes != sizeof magic_read) {
+		fprintf(stderr, "cannot read magic\n");
+		goto failure;
+	}
+
+	if(memcmp(magic_read, magic, sizeof magic)) {
+		fprintf(stderr, "magic not read properly\n");
+		goto failure;
+	}
+
+	bytes = read(input_fd,  sha_read, sizeof sha_read);
+	if(bytes != sizeof sha_read) {
+		fprintf(stderr, "cannot read sha value\n");
+		goto failure;
+	}
+
+	SHA256(key, AES_256_BLOCK_SIZE, sha_computed);
+	if(memcmp(sha_computed, sha_read, sizeof sha_read)) {
+		fprintf(stderr, "problem comparing sha values\n");
+		goto failure;
+	}
+
 
 #ifdef SAVE_IV
 	retval = read(input_fd, iv, sizeof iv);
