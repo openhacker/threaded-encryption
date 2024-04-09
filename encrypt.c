@@ -26,19 +26,15 @@ static const int AES_BLOCK_SIZE = 16;
 
 static const char magic[4] = { 'H', 'Y', 'P', 'N' };
 
-void handleErrors(void)
-{
-	ERR_print_errors_fp(stderr);
-	abort();
-}
 
 /* from demos/cipher/aesgcm.c */
-static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, unsigned char *aad, int aad_len, 
+static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, 
+					unsigned char *aad, int aad_len, 
 					unsigned char *gcm_key,	/* 32 chars */
 				    	unsigned char *gcm_iv, size_t iv_len)
 {
 
-	bool ret = false;
+	enum encrypt_result ret = ENCRYPT_SUCCESSFUL;
 	EVP_CIPHER_CTX *ctx;
 	unsigned char temp_buf[1024];
 	int tmplen;
@@ -50,10 +46,10 @@ static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, uns
 	size_t total_bytes_read = 0;
 
 	/* Create a context for the encrypt operation */
-	if ((ctx = EVP_CIPHER_CTX_new()) == NULL)
+	if ((ctx = EVP_CIPHER_CTX_new()) == NULL) {
+		ret = ENCRYPT_NO_CTX;
 		goto err;
-
-
+	}
 
 	/* Set IV length if default 96 bits is not appropriate */
 	params[0] = OSSL_PARAM_construct_size_t(OSSL_CIPHER_PARAM_AEAD_IVLEN,
@@ -88,8 +84,7 @@ static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, uns
 		if (!bytes_read)
 			break;
 		else if (bytes_read < 0) {
-			fprintf(stderr, "problem with read: %s\n",
-				strerror(errno));
+			ret = ENCRYPT_READ_PROBLEM;
 			goto err;
 		}
 
@@ -98,26 +93,29 @@ static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, uns
 			break;
 
 		/* Encrypt plaintext */
-		if (!EVP_EncryptUpdate(ctx, outbuf, &outlen, inbuf, bytes_read))
+		if (!EVP_EncryptUpdate(ctx, outbuf, &outlen, inbuf, bytes_read)) {
+			ret = ENCRYPT_UPDATE_FAILED;
 			goto err;
+		}
 
 		/* Output encrypted block */
 		bytes_written = write(output_fd, outbuf, outlen);
 		if (bytes_written < 0) {
-			fprintf(stderr, "problem with write: %s\n",
-				strerror(errno));
+			ret = ENCRYPT_WRITE_FAILED;
 			goto err;
 		} else if (bytes_written != outlen) {
 			fprintf(stderr,
 				"problem with write: wrote %d bytes, wanted %d\n",
 				bytes_written, outlen);
-			goto err;
+			// ml -- not sure how to handle this
 		}
 	}
 
 	/* Finalise: note get no output for GCM */
-	if (!EVP_EncryptFinal_ex(ctx, temp_buf, &tmplen))
+	if (!EVP_EncryptFinal_ex(ctx, temp_buf, &tmplen)) {
+		ret = ENCRYPT_FINAL_FAILED;
 		goto err;
+	}
 
 	assert(tmplen == 0);
 
@@ -126,26 +124,20 @@ static bool aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, uns
 	    OSSL_PARAM_construct_octet_string(OSSL_CIPHER_PARAM_AEAD_TAG,
 					      outtag, 16);
 
-	if (!EVP_CIPHER_CTX_get_params(ctx, params))
+	if (!EVP_CIPHER_CTX_get_params(ctx, params)) {
+		ret = ENCRYPT_GET_PARAMS_FAILED;
 		goto err;
-
-#if 0
-	/* Output tag */
-	printf("Tag:\n");
-	BIO_dump_fp(stdout, outtag, 16);
-#endif
+	}
 
 	write(output_fd, outtag, sizeof outtag);
 
-	ret = true;
- err:
+err:
+#if 0
 	if (ret == false)
 		ERR_print_errors_fp(stderr);
-
-#if 0
-	EVP_CIPHER_free(cipher);
 #endif
-	EVP_CIPHER_CTX_free(ctx);
+	if(ctx)
+		EVP_CIPHER_CTX_free(ctx);
 
 	return ret;
 }
@@ -376,54 +368,64 @@ static bool construct_iv(char *iv, int size)
 }
 
 
-bool do_encrypt(const char *input, const char *output, size_t bytes,
+enum encrypt_result do_encrypt(const char *input, const char *output, size_t bytes,
 		  const uint8_t key[AES_256_BLOCK_SIZE]) 
 {
 	int input_fd;
 	int output_fd;
 	// int retval;
-	bool result = false;	// default failure
+	enum encrypt_result ret; 
+	bool result;
 	char iv[12];
 	size_t output_bytes;
 	uint8_t sha_value[SHA256_DIGEST_LENGTH];
 	uint8_t  *sha;
+	int save_errno;
 
 	input_fd = open(input, O_RDONLY);
 	if (input_fd < 0) {
+		save_errno = errno;
 		fprintf(stderr, "cannot open input: %s: %s\n", input,
 			strerror(errno));
-		return false;
+		errno = save_errno;
+		return ENCRYPT_CANNOT_OPEN_INPUT;
 	}
 
 	output_fd = open(output, O_WRONLY | O_CREAT, 0666);
 	if (output_fd < 0) {
+		save_errno = errno;
 		fprintf(stderr, "cannot open output %s: %s\n", output,
 			strerror(errno));
 		close(input_fd);
-		return false;
+		errno = save_errno;
+		return ENCRYPT_CANNOT_OPEN_OUTPUT;
 	}
 
 	output_bytes = write(output_fd, magic, sizeof magic);
 	if(output_bytes != sizeof magic) {
 		fprintf(stderr, "cannot write magic\n");
+		ret = ENCRYPT_WRITE_FAILED;
 		goto failure;
 	}
 
 	sha = SHA256(key, AES_256_BLOCK_SIZE, sha_value);
 	if(!sha) {
 		fprintf(stderr, "SHA256 didn't work\n");
+		ret = ENCRYPT_CANNOT_COMPUTE_SHA256;
 		goto failure;
 	}
 
 	output_bytes = write(output_fd, sha_value, sizeof sha_value);
 	if(output_bytes != sizeof sha_value) {
 		fprintf(stderr, "problem writing SHA256\n");
+		ret = ENCRYPT_WRITE_FAILED;
 		goto failure;
 	}
 	
 	result = construct_iv(iv, sizeof iv);
 	if (result == false) {
 		fprintf(stderr, "cannot get random iv: %s\n", strerror(errno));
+		ret = ENCRYPT_FAILURE;
 		goto failure;
 	}
 #ifdef SAVE_IV

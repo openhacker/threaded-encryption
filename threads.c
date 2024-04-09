@@ -163,17 +163,28 @@ static void *encrypt_decrypt_copy(void *args)
 	struct thread_info *aes_info = (struct thread_info *) args;
 
 	while(1) {
-		bool result; 
+		bool result = false; 
 
 		pthread_mutex_lock(&aes_info->work_available);
 		
 		switch(aes_info->type_of_op) {
 			case ENCRYPT:
-				result = do_encrypt(aes_info->input, aes_info->output, aes_info->bytes, aes_info->key);
+				{
+				enum encrypt_result status;
+
+				status = do_encrypt(aes_info->input, aes_info->output, aes_info->bytes, aes_info->key);
+				if(status == ENCRYPT_SUCCESSFUL)
+					result = true;
+				}
 				break;
 			case DECRYPT:
-				result = do_decrypt(aes_info->input, aes_info->output, aes_info->key);
+#if 0
+				enum  encrypt_result status;
+				status = do_decrypt(aes_info->input, aes_info->output, aes_info->key);
+				if(status == ENCRYPT_SUCCESSFUL)
+					result = true;
 				break;
+#endif
 			case COPY:
 				result = copy_file(aes_info->input, aes_info->output, aes_info->bytes);
 				break;
