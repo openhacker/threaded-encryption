@@ -178,13 +178,13 @@ static void *encrypt_decrypt_copy(void *args)
 				}
 				break;
 			case DECRYPT:
-#if 0
+				{
 				enum  encrypt_result status;
 				status = do_decrypt(aes_info->input, aes_info->output, aes_info->key);
 				if(status == ENCRYPT_SUCCESSFUL)
 					result = true;
+				}
 				break;
-#endif
 			case COPY:
 				result = copy_file(aes_info->input, aes_info->output, aes_info->bytes);
 				break;

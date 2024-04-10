@@ -24,6 +24,10 @@ static const int AES_256_BLOCK_SIZE = 32;
 static const int AES_BLOCK_SIZE = 16;
 #endif
 
+#ifndef BUFFER_SIZE
+#define BUFFER_SIZE (8 * 1024)
+#endif
+
 static const char magic[4] = { 'H', 'Y', 'P', 'N' };
 
 
@@ -63,8 +67,10 @@ static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int opt
 	 * application the IV would be generated internally so the iv passed in
 	 * would be NULL. 
 	 */
-	if (!EVP_EncryptInit_ex2(ctx, cipher_type, gcm_key, gcm_iv, params))
+	if (!EVP_EncryptInit_ex2(ctx, cipher_type, gcm_key, gcm_iv, params)) {
+		ret = ENCRYPT_INIT_FAILED;
 		goto err;
+	}
 
 #if 0
 	/* Zero or more calls to specify any AAD */
@@ -73,7 +79,6 @@ static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int opt
 #endif
 
 	while (1) {
-		const size_t BUFFER_SIZE = 8 * 1024;
 		unsigned char inbuf[BUFFER_SIZE];
 		unsigned char outbuf[BUFFER_SIZE + cipher_block_size];
 		int bytes_read;
@@ -142,10 +147,10 @@ err:
 	return ret;
 }
 
-static bool aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int aad_len, unsigned char *gcm_key,	// 32 chars
+static enum decrypt_result aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int aad_len, unsigned char *gcm_key,	// 32 chars
 		    unsigned char *gcm_iv, size_t gcm_ivlen)
 {
-	bool ret = false;
+	enum decrypt_result ret = DECRYPT_SUCCESSFUL;
 	EVP_CIPHER_CTX *ctx;
 	OSSL_PARAM params[2] = {
 		OSSL_PARAM_END, OSSL_PARAM_END
@@ -160,8 +165,10 @@ static bool aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int
 	unsigned char buffer[1024];
 	int buflen;
 
-	if ((ctx = EVP_CIPHER_CTX_new()) == NULL)
+	if ((ctx = EVP_CIPHER_CTX_new()) == NULL) {
+		ret =  DECRYPT_NO_CTX;
 		goto err;
+	}
 
 #if 0
 	/* Fetch the cipher implementation */
@@ -177,42 +184,38 @@ static bool aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int
 	 * Initialise an encrypt operation with the cipher/mode, key, IV and
 	 * IV length parameter.
 	 */
-	if (!EVP_DecryptInit_ex2(ctx, cipher_type, gcm_key, gcm_iv, params))
+	if (!EVP_DecryptInit_ex2(ctx, cipher_type, gcm_key, gcm_iv, params)) {
+		ret = DECRYPT_INIT_FAILED;
 		goto err;
+	}
 
 	
 	start_of_data = lseek(input_fd, 0, SEEK_CUR);
-//	fprintf(stderr, "current point = %ld\n", start_of_data);
+
 	total_bytes_desired = lseek(input_fd, -16, SEEK_END);
 	total_bytes_desired -= start_of_data;
 
 	if (total_bytes_desired < 0) {
-		fprintf(stderr, "Cannot lseek tag, %s\n", strerror(errno));
+		ret = DECRYPT_LSEEK_FAILED;
 		goto err;
 	}
 
 	count = read(input_fd, gcm_tag, sizeof gcm_tag);
 	if (count < 0) {
-		fprintf(stderr, "read tag failed: %s\n", strerror(errno));
+		ret = DECRYPT_READ_TAG_FAILED;
 		goto err;
 	}
 
 	/* go back to beginning of file */
 	off_result = lseek(input_fd, start_of_data, SEEK_SET);
 	if (off_result < 0) {
-		fprintf(stderr, "cannot rewind file: %s\n", strerror(errno));
+		ret = DECRYPT_LSEEK_FAILED;
 		goto err;
 	}
-#if 0
-	/* Zero or more calls to specify any AAD */
-	if (!EVP_DecryptUpdate(ctx, NULL, &outlen, gcm_aad, sizeof(gcm_aad)))
-		goto err;
-#endif
 
 	while (total_bytes_read < total_bytes_desired) {
-		const int BUF_SIZE = 8 * 1024;
-		unsigned char inbuf[BUF_SIZE];
-		unsigned char outbuf[BUF_SIZE + cipher_block_size];
+		unsigned char inbuf[BUFFER_SIZE];
+		unsigned char outbuf[BUFFER_SIZE + cipher_block_size];
 		int outlen;
 		int bytes_to_read;
 
@@ -222,16 +225,27 @@ static bool aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int
 			bytes_to_read = total_bytes_desired - total_bytes_read;
 
 		count = read(input_fd, inbuf, bytes_to_read);
-		assert(count == bytes_to_read);
+		if(count <= 0) {
+			ret = DECRYPT_READ_FAILED;
+			goto err;
+		}
+		if(count != bytes_to_read) {
+			fprintf(stderr, "Read problem,  wanted %d, got %d\n", bytes_to_read, count);
+			ret = DECRYPT_READ_FAILED;
+			goto err;
+		}
 
 		if (!EVP_DecryptUpdate(ctx, outbuf, &outlen, inbuf, count)) {
-			fprintf(stderr, "EVP_DecryptUpdate failed\n");
+			ret = DECRYPT_UPDATE_FAILED;
 			goto err;
 		}
 
 		total_bytes_read += count;
 		count = write(output_fd, outbuf, outlen);
-		assert(count == outlen);
+		if(count != outlen) {
+			ret = DECRYPT_WRITE_FAILED;
+			goto err;
+		}
 	}
 
 	/* Set expected tag value. */
@@ -239,8 +253,10 @@ static bool aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int
 	    OSSL_PARAM_construct_octet_string(OSSL_CIPHER_PARAM_AEAD_TAG,
 					      (void *)gcm_tag, sizeof(gcm_tag));
 
-	if (!EVP_CIPHER_CTX_set_params(ctx, params))
+	if (!EVP_CIPHER_CTX_set_params(ctx, params)) {
+		ret = DECRYPT_SET_PARAMS_FAILED;
 		goto err;
+	}
 
 	/* Finalise: note get no output for GCM */
 	int rv = EVP_DecryptFinal_ex(ctx, buffer, &buflen);
@@ -249,16 +265,16 @@ static bool aes_gcm_decrypt(int input_fd, int output_fd, unsigned char *aad, int
 	 * failed and plaintext is not trustworthy.
 	 */
 	if(rv == 0) {
-		printf("Tag Verify failed\n");
+		ret =  DECRYPT_TAG_COMPARE_FAILED;
 		goto err;
 	}
 
-	ret = true;
  err:
-	if (false == ret)
+	if (DECRYPT_SUCCESSFUL != ret)
 		ERR_print_errors_fp(stderr);
 
-	EVP_CIPHER_CTX_free(ctx);
+	if(ctx)
+		EVP_CIPHER_CTX_free(ctx);
 
 	return ret;
 }
@@ -452,55 +468,54 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 
 }
 
-bool do_decrypt(const char *input, const char *output,
+enum decrypt_result do_decrypt(const char *input, const char *output,
 		const uint8_t key[AES_256_BLOCK_SIZE])
 {
 
 	int input_fd;
 	int output_fd;
 	int retval;
-	bool result = false;	// default failure
+	enum decrypt_result result;
 	unsigned char iv[12];
 	uint8_t magic_read[sizeof magic];
 	size_t bytes;
 	uint8_t sha_read[SHA256_DIGEST_LENGTH];
 	uint8_t sha_computed[SHA256_DIGEST_LENGTH];	
+	int save_errno;
 
-	 input_fd = open(input, O_RDONLY);
+	input_fd = open(input, O_RDONLY);
 	if (input_fd < 0) {
-		fprintf(stderr, "cannot open input: %s: %s\n", input,
-			strerror(errno));
-		return false;
+		return DECRYPT_OPEN_INPUT_FAILED;
 	}
 
 	output_fd = open(output, O_WRONLY | O_CREAT, 0666);
 	if (output_fd < 0) {
-		fprintf(stderr, "cannot open output %s: %s\n", output,
-			strerror(errno));
+		save_errno = errno;
 		close(input_fd);
-		return false;
+		errno = save_errno;
+		return DECRYPT_OPEN_OUTPUT_FAILED;
 	}
 
 	bytes = read(input_fd, magic_read, sizeof magic_read);
 	if(bytes != sizeof magic_read) {
-		fprintf(stderr, "cannot read magic\n");
+		result = DECRYPT_CANNOT_READ_MAGIC;
 		goto failure;
 	}
 
 	if(memcmp(magic_read, magic, sizeof magic)) {
-		fprintf(stderr, "magic not read properly\n");
+		result = DECRYPT_BAD_MAGIC;
 		goto failure;
 	}
 
 	bytes = read(input_fd,  sha_read, sizeof sha_read);
 	if(bytes != sizeof sha_read) {
-		fprintf(stderr, "cannot read sha value\n");
+		result = DECRYPT_CANNOT_READ_SHA;
 		goto failure;
 	}
 
 	SHA256(key, AES_256_BLOCK_SIZE, sha_computed);
 	if(memcmp(sha_computed, sha_read, sizeof sha_read)) {
-		fprintf(stderr, "problem comparing sha values\n");
+		result = DECRYPT_SHA_COMPARE_FAILED;
 		goto failure;
 	}
 
@@ -508,8 +523,8 @@ bool do_decrypt(const char *input, const char *output,
 #ifdef SAVE_IV
 	retval = read(input_fd, iv, sizeof iv);
 	if (retval != sizeof iv) {
-		fprintf(stderr, "can't read  saved iv\n");
-		exit(1);
+		result = DECRYPT_CANNOT_READ_IV;
+		goto failure;
 	}
 #else
 
@@ -526,19 +541,22 @@ bool do_decrypt(const char *input, const char *output,
 		result = aes_gcm_decrypt(input_fd, output_fd, NULL, 0, key, iv,
 				    sizeof iv);
 		break;
+#if 0
 	case AES_256_CBC:
-//                      result = do_cbc(true, input_fd, output_fd, bytes, key, iv);
+                      result = do_cbc(true, input_fd, output_fd, bytes, key, iv);
 //                      break;
+#endif
 	default:
 		fprintf(stderr, "unknown cipher\n");
 		abort();
 	}
 
  failure:
+	save_errno = errno;
 	close(input_fd);
 	close(output_fd);
+	errno = save_errno;
 	return result;
-
 }
 
 void select_cipher_type(enum cipher_type type)
