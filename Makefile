@@ -2,6 +2,8 @@
 #  -DSAVE_IV -- save IV in file (needed for random IV)
 # use XCFLAGS or DEFINE for this
 DEFINES += -DSAVE_IV
+# 1M buffer
+DEFINES += -DBUFFER_SIZE=1048576
 # DEFINES +=-DZERO_IV
 CC=gcc
 OPT= -O2

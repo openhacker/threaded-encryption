@@ -416,10 +416,12 @@ static void run_threads(void)
 	}
 
 	struct timeval end_time;
+	struct timeval after_sync_time;
 	struct timeval delta_time;
 	double microseconds;
 	double seconds;
 	struct rusage end_rusage;
+	struct rusage after_sync_rusage;
 	struct timeval delta_usertime;
 	struct timeval delta_systime;
 	double gigabytes;
@@ -428,6 +430,10 @@ static void run_threads(void)
 	getrusage(RUSAGE_SELF, &end_rusage);
 
 
+	printf("doing sync\n");
+	sync();
+	gettimeofday(&after_sync_time, NULL);
+	getrusage(RUSAGE_SELF, &after_sync_rusage);
 	fprintf(stderr, "created %d files\n", number_files);
 	fprintf(stderr, "%s\tthreads = %d\t", algorithm == true ? "aes-256-cbc" :
 								"aes-256-gcm", num_threads);
@@ -444,6 +450,17 @@ static void run_threads(void)
 
 	printf("wall time =  %.3f user time = %.3f, systime = %.3f\n",
 			timeval_to_seconds(delta_time), timeval_to_seconds(delta_usertime), timeval_to_seconds(delta_systime));
+
+	timersub(&after_sync_time, &end_time, &delta_time);
+	printf("sync time = %.3f\n", timeval_to_seconds(delta_time));
+
+
+	timersub(&after_sync_time, &start_time, &delta_time);
+	microseconds = delta_time.tv_usec;
+	microseconds += delta_time.tv_sec * 1000 * 1000;
+	seconds = microseconds / (1000.0 * 1000.0);
+
+	printf("total throughput = %.3f\n", gigabytes/seconds);
 	
 }
 				
