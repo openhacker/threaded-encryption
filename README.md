@@ -8,15 +8,34 @@ To APIs are used which need to be incorporated in dart via a FFI.
 ## File Format
 
 The file format is simple:
-
+  * Magic number (HYPN) to identify encrypted files easily
+  * SHA256 (32 bytes) of the AES key -- to confirm the right key is being used
   * 12 byte random IV
   * body of encrypted file
   * 16 byte gcm tag (to be read when encrypting)
 
 ## Encryption
 
-bool do_encrypt(const char *input_file, const char *output_file, size_t optional_size, const uint8_t key_256[32]);
-
+	#include "encrypt.h"
+	
+	enum encrypt_result {
+	        ENCRYPT_SUCCESSFUL,
+	        ENCRYPT_NO_CTX,
+	        ENCRYPT_GET_PARAMS_FAILED,
+	        ENCRYPT_INIT_FAILED,
+	        ENCRYPT_WRITE_FAILED,
+	        ENCRYPT_READ_PROBLEM,
+	        ENCRYPT_UPDATE_FAILED,
+	        ENCRYPT_CANNOT_OPEN_INPUT,
+	        ENCRYPT_CANNOT_OPEN_OUTPUT,
+	        ENCRYPT_CANNOT_COMPUTE_SHA256,
+	        ENCRYPT_FINAL_FAILED,
+	        ENCRYPT_FAILURE  
+	};
+	
+	
+	 enum encrypt_result do_encrypt(const char *input_file, const char *output_file, size_t optional_size, const uint8_t key_256[32]);
+	
 The following parameters are used:  
   
   * input file  -- must be present
@@ -30,8 +49,33 @@ If there is a problem, there may be output left in output_file
 
 ## Decryption
 
-bool do_decrypt(const char *input_file, const char *output_file, const uint8_t key_256[32]);
-
+	#include "encrypt.h"
+	
+	enum decrypt_result {
+	        DECRYPT_SUCCESSFUL,
+	        DECRYPT_NO_CTX,
+	        DECRYPT_INIT_FAILED,
+	        DECRYPT_LSEEK_FAILED,
+	        DECRYPT_READ_TAG_FAILED,
+	        DECRYPT_UPDATE_FAILED,
+	        DECRYPT_WRITE_FAILED,   
+	        DECRYPT_READ_FAILED,
+	        DECRYPT_MAGIC_FAILED,
+	        DECRYPT_AES_KEY_FAILED,
+	        DECRYPT_SET_PARAMS_FAILED,
+	        DECRYPT_TAG_COMPARE_FAILED,
+	        DECRYPT_OPEN_INPUT_FAILED,
+	        DECRYPT_OPEN_OUTPUT_FAILED,
+	        DECRYPT_CANNOT_READ_MAGIC,
+	        DECRYPT_BAD_MAGIC,
+	        DECRYPT_CANNOT_READ_IV,
+	        DECRYPT_CANNOT_READ_SHA,
+	        DECRYPT_SHA_COMPARE_FAILED
+	};
+	
+	
+	enum decrypt_result  do_decrypt(const char *input_file, const char *output_file, const uint8_t key_256[32]);
+	
 The following parameters are needed:  
 
   * input_file - are readable input file which needs to exist (it can be NULL)
