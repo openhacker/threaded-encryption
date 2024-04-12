@@ -113,6 +113,8 @@ If there is a problem, there may be output in the output file.
 	       			int num_threads,
 	       			bool  (*callback)(struct thread_entry *entry, size_t size);
 	       
+
+
 The callback is optional.   If its NULL, no callback is used.
 If there is a callback, true means "keep going".  False means "stop when all threads complete.    The size can be used to compute "number of files" and "size"
 
@@ -123,14 +125,7 @@ num_threads is the number of threads to use.
 It returns the number of files processed (working cases is num_entries is the return value.
 
 
-
-
-
-
-	       
-
-
-## Making software
+## Making the software
 
 The makefile is structured with:
 
