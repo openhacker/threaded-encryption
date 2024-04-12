@@ -8,6 +8,7 @@ To APIs are used which need to be incorporated in dart via a FFI.
 ## File Format
 
 The file format is simple:
+
   * Magic number (HYPN) to identify encrypted files easily
   * SHA256 (32 bytes) of the AES key -- to confirm the right key is being used
   * 12 byte random IV
@@ -88,6 +89,45 @@ FALSE if there is a problem.
 If there is a problem, there may be output in the output file.
 
 
+## Encrypt/decrypt with threads
+
+		#include "openssl_threads.h"
+		
+		struct threaded_entry {
+			const char *input_file;	// name of input file
+			const char *output_file;    // name of output file
+			bool encrypt;   			// true if encrypt, false for decrypt
+			bool completed;
+			int errno_value;	/* useful when status shows a system called
+							 * failed 
+							 */
+			union {
+				enum decrypt_result decrypt_status;
+				enum encrypt_result encrypt_status;
+			};
+	
+	       };
+	       
+	      int openssl_with_threads(struct thread_entry *array, 
+	       			int num_entries, 
+	       			int num_threads,
+	       			bool  (*callback)(struct thread_entry *entry, size_t size);
+	       
+The callback is optional.   If its NULL, no callback is used.
+If there is a callback, true means "keep going".  False means "stop when all threads complete.    The size can be used to compute "number of files" and "size"
+
+num_entries is the size of array.
+
+num_threads is the number of threads to use.
+
+It returns the number of files processed (working cases is num_entries is the return value.
+
+
+
+
+
+
+	       
 
 
 ## Making software
@@ -98,6 +138,7 @@ The makefile is structured with:
   * DEFINES -- software currently uses  
         * -DSAVE_IV -- save IV in the output file during encryption (could be random)  
         * -DZERO_IV -- IV is a byte stream of zeros -- useful for testing and not saving the IV
+        * -DBUFFER_SIZE=nnn -- set the BUFFER_SIZE instead of 8k 
 
 
 It needs to be used on a relatively recent version of openssl (it appears the API was extended to help with AEAD encryption)
