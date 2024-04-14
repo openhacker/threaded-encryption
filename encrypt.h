@@ -1,6 +1,7 @@
 #ifndef _ENCRYPT_H
 #define _ENCRYPT_H
 
+#include <stdint.h>
 #include <stdbool.h>
 
 enum cipher_type {
