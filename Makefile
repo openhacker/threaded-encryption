@@ -10,7 +10,7 @@ OPT= -O2
 CFLAGS=-pthread -Wall -g ${OPT}  ${XCFLAGS} ${DEFINES}
 
 
-PROGS=threads encrypt-one decrypt-one zero_files
+PROGS=threads encrypt-one decrypt-one zero_files encrypt_files
 all: ${PROGS}
 
 threads:	threads.o encrypt.o
@@ -25,6 +25,10 @@ decrypt-one:	decrypt-one.o encrypt.o
 
 zero_files:	zero_files.o openssl_threads.o encrypt.o
 	${CC} -pthread $^ -o $@ -lcrypto
+
+encrypt_files:	encrypt_files.o openssl_threads.o encrypt.o
+	${CC} -pthread $^ -o $@ -lcrypto
+
 
 clean:
 	-rm  ${PROGS}
