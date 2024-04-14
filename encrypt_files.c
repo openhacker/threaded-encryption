@@ -4,6 +4,7 @@
 #include <string.h>
 #include "openssl_threads.h"
 
+static const uint8_t default_key[AES_256_KEY_SIZE] = { 0 };
 
 static void usage(const char *string) 
 {
@@ -16,6 +17,13 @@ static void usage(const char *string)
 	exit(1);
 }
 
+static bool callback(struct thread_entry *pentry)
+{
+	fprintf(stderr, "entrypted %s to %s = %d bytes\n",
+			pentry->input_file, pentry->output_file, pentry->size);
+	return true;
+}
+
 static char **find_files(const char *directory)
 {
 	FILE *stream;
@@ -26,6 +34,8 @@ static char **find_files(const char *directory)
 	const int alloc_size = 1024;
 	size_t bytes_read;
 	int i = 0;
+	int string_size;
+	char **files = NULL;
 
 	snprintf(command, sizeof command, "find %s -type f", directory);
 
@@ -35,6 +45,7 @@ static char **find_files(const char *directory)
 		size_t bytes;
 
 		output = realloc(output, alloc_size * (loop_times + 1));
+		memset(output + (loop_times * alloc_size), 0, alloc_size);
 		bytes = fread(output + (loop_times * alloc_size), 1, alloc_size, stream);
 		if(feof(stream))
 			break;
@@ -43,22 +54,30 @@ static char **find_files(const char *directory)
 	}
 	pclose(stream);
 
-	printf("output = %s\n", output);
+
+	string_size = strlen(output);
+	printf("bytes = %d, output = %s\n", string_size, output);
 
 	output_tokens = output;
 	while(1) {
 		char *token;
 
 		token = strsep(&output_tokens, " \n");
-		if(!token)
+		if(!token || !*token)
 			break;
+
+
 		printf("token %d = %s\n", i, token);
+		files = realloc(files, sizeof (char **) * (i + 1));
+		files[i] = strdup(token);
 		i++;
 	}
 
+	files = realloc(files, sizeof(char **) * (i + 1));
+	files[i] = NULL;
 	free(output);
 	
-	return NULL;
+	return files;
 }
 
 int main(int argc, char *argv[])
@@ -67,6 +86,10 @@ int main(int argc, char *argv[])
 	int num_threads = 1;
 	char **files;
 	bool write_to_dev_null = false;
+	char *cp;
+	int num_elements =0;
+	struct thread_entry *entries;
+	int result;
 
 	while(1) {
 		int c;
@@ -98,8 +121,35 @@ int main(int argc, char *argv[])
 		usage("No directory selected");
 	}
 
-
 	files = find_files(directory);
+
+
+	for(char **walker = files; *walker; walker++) {
+		printf("entry = %s\n", *walker);
+		num_elements++;
+	}
+
+	entries = calloc(sizeof *entries, num_elements);
+
+	for(int i = 0; i < num_elements; i++) {
+		char temp_buffer[PATH_MAX];
+		struct thread_entry *pentry;
+
+		pentry = &entries[i];
+		strcpy(pentry->input_file, files[i]);
+		if(true == write_to_dev_null) {
+			strcpy(pentry->output_file, "/dev/null");
+		} else {
+			snprintf(temp_buffer, sizeof temp_buffer, "%s.hypn", files[i]);
+			strcpy(pentry->output_file, temp_buffer);
+		}
+		pentry->encrypt = true;
+		memcpy(pentry->aes_key, default_key, sizeof default_key);
+	}
+
+	result = openssl_with_threads(entries, num_elements, num_threads, callback); 
+
+	printf("result = %d\n", result);
 	
 	system("set -x; time -p sync");
 
