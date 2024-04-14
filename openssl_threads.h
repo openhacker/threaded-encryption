@@ -31,8 +31,7 @@ struct thread_entry {
 int openssl_with_threads(struct thread_entry *array, 
 		int num_entries, 
 		int num_threads,
-		unsigned char aes_key[32],	/* for AES 256 */
-		bool  (*callback)(struct thread_entry *entry, size_t size));
+		bool  (*callback)(struct thread_entry *entry));
 
 #endif
 

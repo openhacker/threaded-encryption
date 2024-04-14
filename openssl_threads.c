@@ -12,7 +12,8 @@ struct thread_info {
 	struct thread_entry *work;
 	pthread_t info; 
 	pthread_mutex_t work_available;
-	bool done;
+	bool done;	/* work is done */
+	bool terminated;	/* thread doesn't exist anymore */
 };
 
 
@@ -66,12 +67,12 @@ static void *encrypt_decrypt(void *args)
 int openssl_with_threads(struct thread_entry *array, 
 		int num_entries, 
 		int num_threads,
-		unsigned char aes_key[32],	/* for AES 256 */
-		bool  (*callback)(struct thread_entry *entry, size_t size))
+		bool  (*callback)(struct thread_entry *entry))
 {
 	int i;
 	int jobs_processed;
 	struct thread_info *pthread;
+	int work_left = num_entries;
 
 
 	if(num_threads < 1) 
@@ -92,7 +93,53 @@ int openssl_with_threads(struct thread_entry *array,
 
 		result = pthread_create(&pthread->info, NULL,  encrypt_decrypt, pthread);
 		assert(result == 0);
+	}
+
+	/* case where less files than threads */
+	if(i  <  num_threads) 
+		num_threads = i;	
+
+	pthread_mutex_lock(&able_to_condition);
+	work_left -= num_threads;	
+
+	for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
+		pthread_mutex_unlock(&pthread->work_available);
+	}
 		
+	while(1) {
+		pthread_cond_wait(&cv, &able_to_condition);
+
+		/* see if we need to callback, note this is done and see if more work is needed for the thread */
+		for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
+			if(pthread->done == true) {
+				if(callback) 
+					(*callback)(pthread->work);
+				if(work_left > 0) {
+					pthread->work = array + (num_entries - work_left);
+					pthread_mutex_unlock(&pthread->work_available);
+					work_left--;
+				} else { 
+					// no more work for thread
+					pthread_cancel(pthread->info);
+					pthread->terminated = true;
+				}
+				pthread->done = false;
+			}
+		}
+		
+		bool not_terminated = false;
+
+		/* if all threads terminated, exit */
+		for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
+			if(pthread->terminated == false) {
+				not_terminated = true;
+				break;
+			} 
+		}
+
+		if(not_terminated == false) {
+			break;
+		}
 	}
 		
 }
