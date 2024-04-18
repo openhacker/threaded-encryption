@@ -6,21 +6,30 @@
 
 static const uint8_t default_key[AES_256_KEY_SIZE] = { 0 };
 
+
+static long int total_bytes;
+static bool encrypt = true;	
 static void usage(const char *string) 
 {
 
 	if(string)
 		fprintf(stderr, "%s\n", string);
-	printf("-d <directory>\n");
-	printf("-t <num threads\n");
+	printf("\t-d <directory>\n");
+	printf("\t-t <num threads\n");
+	printf("\t-E encrypt (default)\n");
+	printf("\t-D decrypt\n");
 	printf("-n -- write to /dev/null\n");
 	exit(1);
 }
 
 static bool callback(struct thread_entry *pentry)
 {
+#if 0
 	fprintf(stderr, "entrypted %s to %s = %d bytes\n",
 			pentry->input_file, pentry->output_file, pentry->size);
+#endif
+	total_bytes += pentry->size;
+
 	return true;
 }
 
@@ -67,7 +76,7 @@ static char **find_files(const char *directory)
 			break;
 
 
-		printf("token %d = %s\n", i, token);
+//		printf("token %d = %s\n", i, token);
 		files = realloc(files, sizeof (char **) * (i + 1));
 		files[i] = strdup(token);
 		i++;
@@ -125,7 +134,7 @@ int main(int argc, char *argv[])
 
 
 	for(char **walker = files; *walker; walker++) {
-		printf("entry = %s\n", *walker);
+//		printf("entry = %s\n", *walker);
 		num_elements++;
 	}
 

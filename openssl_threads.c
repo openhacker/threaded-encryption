@@ -2,6 +2,11 @@
 #include <pthread.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <errno.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "openssl_threads.h"
 
 
@@ -64,6 +69,21 @@ static void *encrypt_decrypt(void *args)
 }
 
 
+static int get_file_size(const char *file)
+{
+	struct stat statbuf;
+	int result;
+
+	result = stat(file, &statbuf);
+	if(result < 0) {
+		fprintf(stderr, "stat on %s is problem: %s\n", file, strerror(errno));
+		return -1;
+	}
+	return statbuf.st_size;
+}
+
+
+
 int openssl_with_threads(struct thread_entry *array, 
 		int num_entries, 
 		int num_threads,
@@ -73,6 +93,7 @@ int openssl_with_threads(struct thread_entry *array,
 	int jobs_processed;
 	struct thread_info *pthread;
 	int work_left = num_entries;
+	int count = 0;
 
 
 	if(num_threads < 1) 
@@ -112,8 +133,17 @@ int openssl_with_threads(struct thread_entry *array,
 		/* see if we need to callback, note this is done and see if more work is needed for the thread */
 		for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
 			if(pthread->done == true) {
+				struct thread_entry *pentry;
+
+				count++;
+				pentry = pthread->work;
+				if(!pentry->size) {
+					if(pentry->encrypt)
+						pentry->size = get_file_size(pentry->input_file);
+					else	pentry->size = get_file_size(pentry->output_file);
+				}
 				if(callback) 
-					(*callback)(pthread->work);
+					(*callback)(pentry);
 				if(work_left > 0) {
 					pthread->work = array + (num_entries - work_left);
 					pthread_mutex_unlock(&pthread->work_available);
@@ -141,6 +171,8 @@ int openssl_with_threads(struct thread_entry *array,
 			break;
 		}
 	}
+
+	return count;
 		
 }
 
