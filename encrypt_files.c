@@ -28,6 +28,19 @@ static bool callback(struct thread_entry *pentry)
 	fprintf(stderr, "entrypted %s to %s = %d bytes\n",
 			pentry->input_file, pentry->output_file, pentry->size);
 #endif
+	if(pentry->encrypt == true) {
+		if(pentry->encrypt_status != ENCRYPT_SUCCESSFUL) {
+		       fprintf(stderr, "problem with %s, encrypt not successful = %d\n",
+			 		pentry->input_file, pentry->encrypt_status);
+			return false;
+ 		}
+	} else {
+		if(pentry->decrypt_status != DECRYPT_SUCCESSFUL) {
+			fprintf(stderr, "problem with %s, decrypt not successful = %d\n",
+					pentry->input_file, pentry->decrypt_status);
+			return false;
+		}
+	}
 	total_bytes += pentry->size;
 
 	return true;
@@ -65,7 +78,7 @@ static char **find_files(const char *directory)
 
 
 	string_size = strlen(output);
-	printf("bytes = %d, output = %s\n", string_size, output);
+	// printf("bytes = %d, output = %s\n", string_size, output);
 
 	output_tokens = output;
 	while(1) {
@@ -103,7 +116,7 @@ int main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv,  "d:nt:");
+		c = getopt(argc, argv,  "DEd:nt:");
 		if(c == -1)
 			break;
 
@@ -119,6 +132,12 @@ int main(int argc, char *argv[])
 				break;
 			case 'h':
 				usage(NULL);
+			case 'E':
+				encrypt = true;
+				break;
+			case 'D':
+				encrypt = false;
+				break;
 			default:
 				usage("illegal argument");
 		}
@@ -159,6 +178,7 @@ int main(int argc, char *argv[])
 	result = openssl_with_threads(entries, num_elements, num_threads, callback); 
 
 	printf("result = %d\n", result);
+	printf("bytes processed = %ld\n", total_bytes);
 	
 	system("set -x; time -p sync");
 

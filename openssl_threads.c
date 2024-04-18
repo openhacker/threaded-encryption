@@ -58,11 +58,12 @@ static void *encrypt_decrypt(void *args)
 		if(current_work->encrypt == true) {
 			current_work->encrypt_status = do_encrypt(current_work->input_file, current_work->output_file, 
 					current_work->size, current_work->aes_key);
-			info->done = true;
-			pthread_cond_broadcast(&cv);
 		} else {
-			abort();
+			current_work->decrypt_status = do_decrypt(current_work->input_file, current_work->output_file,
+								current_work->aes_key);
 		}
+		info->done = true;
+		pthread_cond_broadcast(&cv);
 	}
 
 	return NULL;
@@ -94,6 +95,7 @@ int openssl_with_threads(struct thread_entry *array,
 	struct thread_info *pthread;
 	int work_left = num_entries;
 	int count = 0;
+	int num_condition = 0;
 
 
 	if(num_threads < 1) 
@@ -129,6 +131,7 @@ int openssl_with_threads(struct thread_entry *array,
 		
 	while(1) {
 		pthread_cond_wait(&cv, &able_to_condition);
+		num_condition++;
 
 		/* see if we need to callback, note this is done and see if more work is needed for the thread */
 		for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
