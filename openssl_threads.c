@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdatomic.h>
 #include "openssl_threads.h"
 
 
@@ -26,18 +27,25 @@ struct thread_info {
 static struct thread_info *thread_info;
 static int num_threads;
 
+static atomic_int num_atomic_condition;
+static int num_condition;
+
+
 #if 0
 static  pthread_mutex_t able_to_condition = PTHREAD_MUTEX_INITIALIZER;
 static  pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
-#endif
+#else
 
 static  pthread_mutex_t able_to_condition;
 static  pthread_cond_t cv;
+#endif
 
 static void create_thread_structure(int thread_count)
 {
 	pthread_mutex_init(&able_to_condition, NULL);
 	pthread_cond_init(&cv, NULL);
+	pthread_mutex_lock(&cv);
+//	pthread_mutex_lock(&able_to_condition);
 	num_threads = thread_count;
 	thread_info = calloc(sizeof(struct thread_info), num_threads);
 	
@@ -49,7 +57,7 @@ static void *encrypt_decrypt(void *args)
 	struct thread_info *info = (struct thread_info *) args;
 
 	while(1) {
-		bool bool_result = false;
+//		bool bool_result = false;
 		struct thread_entry *current_work;
 
 		pthread_mutex_lock(&info->work_available);
@@ -63,6 +71,9 @@ static void *encrypt_decrypt(void *args)
 								current_work->aes_key);
 		}
 		info->done = true;
+
+		num_atomic_condition++;
+		num_condition++;
 		pthread_cond_broadcast(&cv);
 	}
 
@@ -108,7 +119,6 @@ int openssl_with_threads(struct thread_entry *array,
 		int result;
 
 		result = pthread_mutex_init(&pthread->work_available, NULL);
-
 		result = pthread_mutex_lock(&pthread->work_available);
 		assert(result == 0);
 		pthread->done = false;
@@ -122,7 +132,7 @@ int openssl_with_threads(struct thread_entry *array,
 	if(i  <  num_threads) 
 		num_threads = i;	
 
-	pthread_mutex_lock(&able_to_condition);
+//	pthread_mutex_lock(&able_to_condition);
 	work_left -= num_threads;	
 
 	for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
@@ -157,6 +167,7 @@ int openssl_with_threads(struct thread_entry *array,
 					pthread->terminated = true;
 				}
 				pthread->done = false;
+				break;
 			}
 		}
 		
