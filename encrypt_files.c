@@ -9,6 +9,9 @@ static const uint8_t default_key[AES_256_KEY_SIZE] = { 0 };
 
 static long int total_bytes;
 static bool encrypt = true;	
+
+static bool show_callback = true;
+
 static void usage(const char *string) 
 {
 
@@ -24,10 +27,13 @@ static void usage(const char *string)
 
 static bool callback(struct thread_entry *pentry)
 {
-#if 0
-	fprintf(stderr, "entrypted %s to %s = %d bytes\n",
-			pentry->input_file, pentry->output_file, pentry->size);
-#endif
+	static int count = 0;
+
+	if(true == show_callback)  {
+		fprintf(stderr, "file %d: %s %s to %s = %d bytes\n", count++,  encrypt ? "encrypted" : "decrypted",
+				pentry->input_file, pentry->output_file, pentry->size);
+	}
+
 	if(pentry->encrypt == true) {
 		if(pentry->encrypt_status != ENCRYPT_SUCCESSFUL) {
 		       fprintf(stderr, "problem with %s, encrypt not successful = %d\n",
@@ -84,7 +90,7 @@ static char **find_files(const char *directory)
 	while(1) {
 		char *token;
 
-		token = strsep(&output_tokens, " \n");
+		token = strsep(&output_tokens, "\n");
 		if(!token || !*token)
 			break;
 

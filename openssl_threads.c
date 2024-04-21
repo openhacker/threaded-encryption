@@ -11,9 +11,6 @@
 #include "openssl_threads.h"
 
 
-static  pthread_mutex_t able_to_condition = PTHREAD_MUTEX_INITIALIZER;
-static  pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
-
 struct thread_info {
 	struct thread_entry *work;
 	pthread_t info; 
@@ -24,6 +21,14 @@ struct thread_info {
 
 
 
+/* use pipe trick for sychronization.
+ * Write says a thread is finished.
+ * Read after a thread is finished.
+ * The done flag is used after the work is done
+ * The terminated flag is used when the thread went away.
+ */
+static int pipe_fds[2];
+
 static struct thread_info *thread_info;
 static int num_threads;
 
@@ -31,36 +36,42 @@ static atomic_int num_atomic_condition;
 static int num_condition;
 
 
-#if 0
-static  pthread_mutex_t able_to_condition = PTHREAD_MUTEX_INITIALIZER;
-static  pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
-#else
-
-static  pthread_mutex_t able_to_condition;
-static  pthread_cond_t cv;
-#endif
-
-static void create_thread_structure(int thread_count)
+static bool create_thread_structure(int thread_count)
 {
-	pthread_mutex_init(&able_to_condition, NULL);
-	pthread_cond_init(&cv, NULL);
-	pthread_mutex_lock(&cv);
-//	pthread_mutex_lock(&able_to_condition);
+	int result;
+
 	num_threads = thread_count;
 	thread_info = calloc(sizeof(struct thread_info), num_threads);
-	
+
+
+	result  = pipe(&pipe_fds);
+	if(result < 0) {
+		fprintf(stderr, "problem creating pipe: %s\n", strerror(errno));
+		return false;
+	}
+
+	return true;	
 
 }
 
 static void *encrypt_decrypt(void *args)
 {
 	struct thread_info *info = (struct thread_info *) args;
+//	bool first_time = true;
 
 	while(1) {
-//		bool bool_result = false;
 		struct thread_entry *current_work;
+		char byte = 0;
+		int result;
 
 		pthread_mutex_lock(&info->work_available);
+
+#if 0
+		if(true == first_time) {
+			usleep(10000);
+			first_time = false;
+		}
+#endif
 		current_work = info->work;
 
 		if(current_work->encrypt == true) {
@@ -74,7 +85,13 @@ static void *encrypt_decrypt(void *args)
 
 		num_atomic_condition++;
 		num_condition++;
-		pthread_cond_broadcast(&cv);
+		result = write(pipe_fds[1], &byte, 1);
+		if(result < 0) {
+			fprintf(stderr, "cannot write %s\n", strerror(errno));
+			return NULL;
+		}
+
+
 	}
 
 	return NULL;
@@ -112,15 +129,18 @@ int openssl_with_threads(struct thread_entry *array,
 	if(num_threads < 1) 
 		return 0;
 
-	create_thread_structure(num_threads);
+	if(false == create_thread_structure(num_threads))
+		return 0;	/* problem created structure */
 
 	/* spawn off threads  with work */
 	for(pthread = thread_info, i =  0; i < num_threads && i < num_entries;  i++, pthread++) {
 		int result;
 
-		result = pthread_mutex_init(&pthread->work_available, NULL);
+		pthread_mutex_init(&pthread->work_available, NULL);
 		result = pthread_mutex_lock(&pthread->work_available);
+
 		assert(result == 0);
+
 		pthread->done = false;
 		pthread->work = array + i;
 
@@ -132,15 +152,28 @@ int openssl_with_threads(struct thread_entry *array,
 	if(i  <  num_threads) 
 		num_threads = i;	
 
-//	pthread_mutex_lock(&able_to_condition);
 	work_left -= num_threads;	
 
 	for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
 		pthread_mutex_unlock(&pthread->work_available);
 	}
 		
-	while(1) {
-		pthread_cond_wait(&cv, &able_to_condition);
+	while(num_condition < num_entries) {
+		int result;
+		char c;
+
+		result = read(pipe_fds[0], &c, 1);
+		switch(result) {
+			case 0:
+				fprintf(stderr, "pipe closed\n");
+				return num_condition;	// cleanup??
+			case 1:
+				break;
+			case -1:
+				fprintf(stderr, "read pipe error: %s\n", strerror(errno));
+				continue;
+		}
+
 		num_condition++;
 
 		/* see if we need to callback, note this is done and see if more work is needed for the thread */
@@ -170,7 +203,9 @@ int openssl_with_threads(struct thread_entry *array,
 				break;
 			}
 		}
-		
+
+		assert(pthread < thread_info + num_threads);
+
 		bool not_terminated = false;
 
 		/* if all threads terminated, exit */
@@ -185,6 +220,9 @@ int openssl_with_threads(struct thread_entry *array,
 			break;
 		}
 	}
+	close(pipe_fds[0]);
+	close(pipe_fds[1]);
+	free(thread_info);
 
 	return count;
 		
