@@ -10,7 +10,7 @@ static const uint8_t default_key[AES_256_KEY_SIZE] = { 0 };
 
 static long int total_bytes;
 
-static bool show_callback = true;
+static bool show_callback = false;
 
 static struct timeval start_time;
 
@@ -193,16 +193,18 @@ int main(int argc, char *argv[])
 	entries = calloc(sizeof *entries, num_elements);
 
 	for(int i = 0; i < num_elements; i++) {
-		char temp_buffer[PATH_MAX];
 		struct thread_entry *pentry;
 
 		pentry = &entries[i];
-		strcpy(pentry->input_file, files[i]);
+		pentry->input_file = strdup(files[i]);
+
 		if(true == write_to_dev_null) {
-			strcpy(pentry->output_file, "/dev/null");
+			pentry->output_file = strdup("/dev/null");
 		} else {
+			char temp_buffer[PATH_MAX];
+
 			snprintf(temp_buffer, sizeof temp_buffer, "%s.hypn", files[i]);
-			strcpy(pentry->output_file, temp_buffer);
+			pentry->output_file = strdup(temp_buffer);
 		}
 	}
 
