@@ -25,20 +25,21 @@ static struct threaded_entry *create_zero_entries(int num)
 	for(pentry = entries; pentry < entries + num; pentry++) {
 		strcpy(pentry->input_file, "/dev/zero");
 		strcpy(pentry->output_file, "/dev/null");
-		memcpy(pentry->aes_key, aes_key, sizeof aes_key);
-		pentry->encrypt = true;
-		pentry->size = one_k * one_k * one_k;
 	}
 
 	return entries;
 }
 		
 
-static void callback(struct thread_entry *entry)
+static void callback(struct thread_entry *entry, enum openssl_operation op_type, size_t size )
 {
+	static int count = 0;
 
-	printf("%d: processed %ld bytes\n", ++total_processed, entry->size);
-	bytes_processed += entry->size;
+	count++;
+	if(!(count % 10))
+		printf("processed %d\n", count);
+//	printf("%d: processed %ld bytes\n", ++total_processed, size);
+	bytes_processed += size;
 }
 
 
@@ -71,7 +72,9 @@ main(int argc, char *argv[])
 	gettimeofday(&start_time, NULL);
 	getrusage(RUSAGE_SELF, &start_rusage);
 
-	openssl_with_threads(entries, num, num_threads, callback);
+	setenv("DEV_ZERO", "1", 1);
+
+	openssl_with_threads(entries, num, num_threads, aes_key,  OP_ENCRYPT, callback);
 
 	gettimeofday(&end_time, NULL);
 	getrusage(RUSAGE_SELF, &end_rusage);

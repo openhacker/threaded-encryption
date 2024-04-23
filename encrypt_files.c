@@ -2,15 +2,17 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include "openssl_threads.h"
 
 static const uint8_t default_key[AES_256_KEY_SIZE] = { 0 };
 
 
 static long int total_bytes;
-static bool encrypt = true;	
 
 static bool show_callback = true;
+
+static struct timeval start_time;
 
 static void usage(const char *string) 
 {
@@ -25,29 +27,53 @@ static void usage(const char *string)
 	exit(1);
 }
 
-static bool callback(struct thread_entry *pentry)
+static const char *stringize_operation(enum openssl_operation op)
+{
+	switch(op) {
+		case OP_ENCRYPT:
+			return "encrypt";
+		case OP_DECRYPT:
+			return "decrypt";
+		case OP_COPY:
+			return "copy";
+		default:
+			return "unknown operation";
+	}
+}
+
+static bool callback(struct thread_entry *pentry, enum openssl_operation op, size_t size )
 {
 	static int count = 0;
 
 	if(true == show_callback)  {
-		fprintf(stderr, "file %d: %s %s to %s = %d bytes\n", count++,  encrypt ? "encrypted" : "decrypted",
-				pentry->input_file, pentry->output_file, pentry->size);
+		const char *type_string;
+
+		type_string = stringize_operation(op);
+
+		fprintf(stderr, "file %d: %s %s to %s = %ld bytes\n", count++,  type_string,
+				pentry->input_file, pentry->output_file, size);
 	}
 
-	if(pentry->encrypt == true) {
-		if(pentry->encrypt_status != ENCRYPT_SUCCESSFUL) {
-		       fprintf(stderr, "problem with %s, encrypt not successful = %d\n",
-			 		pentry->input_file, pentry->encrypt_status);
-			return false;
- 		}
-	} else {
-		if(pentry->decrypt_status != DECRYPT_SUCCESSFUL) {
-			fprintf(stderr, "problem with %s, decrypt not successful = %d\n",
-					pentry->input_file, pentry->decrypt_status);
-			return false;
-		}
+	switch(op) {
+		case OP_ENCRYPT:
+			if(pentry->encrypt_status != ENCRYPT_SUCCESSFUL) {
+		       		fprintf(stderr, "problem with %s, encrypt not successful = %d\n",
+			 			pentry->input_file, pentry->encrypt_status);
+				return false;
+ 			}
+			break;
+		case OP_DECRYPT:
+			if(pentry->decrypt_status != DECRYPT_SUCCESSFUL) {
+				fprintf(stderr, "problem with %s, decrypt not successful = %d\n",
+						pentry->input_file, pentry->decrypt_status);
+				return false;
+			}
+		default:
+			fprintf(stderr, "Probelm with op in %s\n", __func__);
+			break;
 	}
-	total_bytes += pentry->size;
+
+	total_bytes += size;
 
 	return true;
 }
@@ -118,6 +144,7 @@ int main(int argc, char *argv[])
 	int num_elements =0;
 	struct thread_entry *entries;
 	int result;
+	enum openssl_operation op = OP_ENCRYPT;
 
 	while(1) {
 		int c;
@@ -139,10 +166,10 @@ int main(int argc, char *argv[])
 			case 'h':
 				usage(NULL);
 			case 'E':
-				encrypt = true;
+				op = OP_ENCRYPT;
 				break;
 			case 'D':
-				encrypt = false;
+				op = OP_DECRYPT;
 				break;
 			default:
 				usage("illegal argument");
@@ -177,11 +204,9 @@ int main(int argc, char *argv[])
 			snprintf(temp_buffer, sizeof temp_buffer, "%s.hypn", files[i]);
 			strcpy(pentry->output_file, temp_buffer);
 		}
-		pentry->encrypt = true;
-		memcpy(pentry->aes_key, default_key, sizeof default_key);
 	}
 
-	result = openssl_with_threads(entries, num_elements, num_threads, callback); 
+	result = openssl_with_threads(entries, num_elements, num_threads, default_key, op, callback); 
 
 	printf("result = %d\n", result);
 	printf("bytes processed = %ld\n", total_bytes);

@@ -17,9 +17,18 @@ struct thread_info {
 	pthread_mutex_t work_available;
 	bool done;	/* work is done */
 	bool terminated;	/* thread doesn't exist anymore */
+	uint8_t *input_buffer;	/* malloced data */
+	uint8_t *output_buffer;	/* malloced data */
 };
 
 
+
+static int buffer_size = 8192;
+
+static uint8_t AES_key[AES_256_KEY_SIZE];
+static enum openssl_operation op_type;
+static const size_t derived_size = 1024 * 1024 * 1024;  // for OP_COPY and /dev/zero
+static size_t file_size = 0;
 
 /* use pipe trick for sychronization.
  * Write says a thread is finished.
@@ -44,7 +53,7 @@ static bool create_thread_structure(int thread_count)
 	thread_info = calloc(sizeof(struct thread_info), num_threads);
 
 
-	result  = pipe(&pipe_fds);
+	result  = pipe(pipe_fds);
 	if(result < 0) {
 		fprintf(stderr, "problem creating pipe: %s\n", strerror(errno));
 		return false;
@@ -57,7 +66,6 @@ static bool create_thread_structure(int thread_count)
 static void *encrypt_decrypt(void *args)
 {
 	struct thread_info *info = (struct thread_info *) args;
-//	bool first_time = true;
 
 	while(1) {
 		struct thread_entry *current_work;
@@ -66,21 +74,22 @@ static void *encrypt_decrypt(void *args)
 
 		pthread_mutex_lock(&info->work_available);
 
-#if 0
-		if(true == first_time) {
-			usleep(10000);
-			first_time = false;
-		}
-#endif
 		current_work = info->work;
 
-		if(current_work->encrypt == true) {
-			current_work->encrypt_status = do_encrypt(current_work->input_file, current_work->output_file, 
-					current_work->size, current_work->aes_key);
-		} else {
-			current_work->decrypt_status = do_decrypt(current_work->input_file, current_work->output_file,
-								current_work->aes_key);
+		switch(op_type) {
+			case OP_ENCRYPT:
+				current_work->encrypt_status = do_encrypt(current_work->input_file, current_work->output_file, 
+					file_size, AES_key );
+				break;
+			case OP_DECRYPT:
+				current_work->decrypt_status = do_decrypt(current_work->input_file, current_work->output_file,
+								AES_key);
+				break;
+			default:
+				fprintf(stderr, "whoops\n");
+				abort();
 		}
+
 		info->done = true;
 
 		num_atomic_condition++;
@@ -116,7 +125,9 @@ static int get_file_size(const char *file)
 int openssl_with_threads(struct thread_entry *array, 
 		int num_entries, 
 		int num_threads,
-		bool  (*callback)(struct thread_entry *entry))
+		uint8_t AES_key[AES_256_KEY_SIZE],
+		enum openssl_operation type,
+		bool  (*callback)(struct thread_entry *entry, enum openssl_operation op_type, size_t size) )
 {
 	int i;
 	int jobs_processed;
@@ -129,8 +140,14 @@ int openssl_with_threads(struct thread_entry *array,
 	if(num_threads < 1) 
 		return 0;
 
+	
 	if(false == create_thread_structure(num_threads))
 		return 0;	/* problem created structure */
+
+	op_type =  type;
+	if(getenv("DEV_ZERO"))
+		file_size = derived_size;
+	else	file_size = 0;
 
 	/* spawn off threads  with work */
 	for(pthread = thread_info, i =  0; i < num_threads && i < num_entries;  i++, pthread++) {
@@ -152,6 +169,7 @@ int openssl_with_threads(struct thread_entry *array,
 	if(i  <  num_threads) 
 		num_threads = i;	
 
+	jobs_processed +=  num_threads;
 	work_left -= num_threads;	
 
 	for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
@@ -180,20 +198,30 @@ int openssl_with_threads(struct thread_entry *array,
 		for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
 			if(pthread->done == true) {
 				struct thread_entry *pentry;
+				int size;
 
 				count++;
 				pentry = pthread->work;
-				if(!pentry->size) {
-					if(pentry->encrypt)
-						pentry->size = get_file_size(pentry->input_file);
-					else	pentry->size = get_file_size(pentry->output_file);
+				switch(op_type)  {
+					case OP_ENCRYPT:
+						if(file_size)
+							size = derived_size;
+						else  size = get_file_size(pentry->input_file);
+						break;
+					case OP_DECRYPT:
+						size = get_file_size(pentry->output_file);
+						break;
+					case OP_COPY:
+						size = derived_size;
+						break;
 				}
 				if(callback) 
-					(*callback)(pentry);
+					(*callback)(pentry, op_type, size);
 				if(work_left > 0) {
 					pthread->work = array + (num_entries - work_left);
 					pthread_mutex_unlock(&pthread->work_available);
 					work_left--;
+					jobs_processed++;
 				} else { 
 					// no more work for thread
 					pthread_cancel(pthread->info);
@@ -229,6 +257,11 @@ int openssl_with_threads(struct thread_entry *array,
 }
 
 
+
+void openssl_buffer_size(int size)
+{
+	buffer_size = size;
+}
 
 
 

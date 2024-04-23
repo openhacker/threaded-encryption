@@ -11,16 +11,11 @@
 struct thread_entry {
 	char input_file[PATH_MAX];	// name of input file
 	char output_file[PATH_MAX];    // name of output file
-	uint8_t	aes_key[AES_256_KEY_SIZE];
-	bool encrypt;   			// true if encrypt, false for decrypt
 	bool do_delete;			// set to true to delete input or output
 	bool completed;
 	int errno_value;	/* useful when status shows a system called
 					 * failed 
 					 */
-	size_t size;		/* only useful when benchmarking /dev/zero to /dev/null.
-				 * otherwise 0
-				 */
 	union {
 		enum decrypt_result decrypt_status;
 		enum encrypt_result encrypt_status;
@@ -28,10 +23,17 @@ struct thread_entry {
 
 };
 
+enum openssl_operation { OP_COPY, OP_ENCRYPT, OP_DECRYPT };
+
 int openssl_with_threads(struct thread_entry *array, 
 		int num_entries, 
 		int num_threads,
-		bool  (*callback)(struct thread_entry *entry));
+		uint8_t AES_key[AES_256_KEY_SIZE],
+		enum openssl_operation op_type,
+		bool  (*callback)(struct thread_entry *entry, enum openssl_operation op_type, size_t size) );
+
+
+void openssl_buffer_size(int size);
 
 #endif
 
