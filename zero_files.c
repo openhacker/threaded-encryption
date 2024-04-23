@@ -23,8 +23,8 @@ static struct threaded_entry *create_zero_entries(int num)
 	entries = calloc(sizeof *entries, num);
 
 	for(pentry = entries; pentry < entries + num; pentry++) {
-		strcpy(pentry->input_file, "/dev/zero");
-		strcpy(pentry->output_file, "/dev/null");
+		pentry->input_file = strdup("/dev/zero"); 
+		pentry->output_file = strdup("/dev/null");
 	}
 
 	return entries;

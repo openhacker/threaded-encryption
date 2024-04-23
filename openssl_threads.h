@@ -9,8 +9,8 @@
 #define AES_256_KEY_SIZE    32
 
 struct thread_entry {
-	char input_file[PATH_MAX];	// name of input file
-	char output_file[PATH_MAX];    // name of output file
+	char *input_file;	// name of input file
+	char *output_file;    // name of output file
 	bool do_delete;			// set to true to delete input or output
 	bool completed;
 	int errno_value;	/* useful when status shows a system called

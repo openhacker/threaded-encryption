@@ -96,7 +96,6 @@ If there is a problem, there may be output in the output file.
 		struct threaded_entry {
 			const char *input_file;	// name of input file
 			const char *output_file;    // name of output file
-			bool encrypt;   			// true if encrypt, false for decrypt
 			bool completed;
 			int errno_value;	/* useful when status shows a system called
 							 * failed 
@@ -107,12 +106,17 @@ If there is a problem, there may be output in the output file.
 			};
 	
 	       };
-	       
+	      
+          // OP_COPY is for benchmarking purposes
+          enum openssl_operation {  OP_COPY, OP_ENCRYPT, OP_DECRYPT };
+
 	      int openssl_with_threads(struct thread_entry *array, 
 	       			int num_entries, 
 	       			int num_threads,
 	       			unsigned char aes_key[32],	/* for AES 256 */
-	       			bool  (*callback)(struct thread_entry *entry, size_t size);
+                    enum openssl_operation op_type,
+	       			bool  (*callback)(struct thread_entry *entry, enum openssl_operation op_type,
+                                    size_t size);
 	       
 
 
@@ -122,6 +126,10 @@ If there is a callback, true means "keep going".  False means "stop when all thr
 num_entries is the size of array.
 
 num_threads is the number of threads to use.
+
+The key is AES 256 key to use.
+
+openssl_operation defines the operation type (ENCRYPT, DECRYPT or COPY)
 
 It returns the number of files processed (working cases is num_entries is the return value.
 
