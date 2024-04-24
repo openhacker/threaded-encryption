@@ -13,7 +13,6 @@ static uint8_t aes_key[AES_256_KEY_SIZE] = { 0 } ;
 static int total_processed = 0;
 static long long unsigned bytes_processed;
 
-static int one_k = 1024;
 
 static struct threaded_entry *create_zero_entries(int num)
 {
@@ -46,7 +45,7 @@ static void callback(struct thread_entry *entry, enum openssl_operation op_type,
 main(int argc, char *argv[])
 {
 
-	struct threaded_entry *entries;
+	struct thread_entry *entries;
 	int num = 100;
 	int num_threads = 1;
 	struct timeval start_time;

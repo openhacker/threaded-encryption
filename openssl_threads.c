@@ -122,6 +122,20 @@ static int get_file_size(const char *file)
 
 
 
+static bool do_unlink(const char *name)
+{
+	int result;
+
+	result = unlink(name);
+
+	if(result < 0) {
+		fprintf(stderr, "cannot unlink %s: %s\n", name, strerror(errno));
+		return false;
+	}
+	return true;
+}
+
+
 int openssl_with_threads(struct thread_entry *array, 
 		int num_entries, 
 		int num_threads,
@@ -135,11 +149,15 @@ int openssl_with_threads(struct thread_entry *array,
 	int work_left = num_entries;
 	int count = 0;
 	int num_condition = 0;
+	bool delete_files = true;
+
 
 
 	if(num_threads < 1) 
 		return 0;
 
+	if(getenv("NO_DELETE"))
+		delete_files = false;
 	
 	if(false == create_thread_structure(num_threads))
 		return 0;	/* problem created structure */
@@ -206,15 +224,40 @@ int openssl_with_threads(struct thread_entry *array,
 					case OP_ENCRYPT:
 						if(file_size)
 							size = derived_size;
-						else  size = get_file_size(pentry->input_file);
+						else  {
+							/* cannot delete derived files like /dev/zero */
+							size = get_file_size(pentry->input_file);
+							if(true == delete_files) {
+								if(pentry->encrypt_status == ENCRYPT_SUCCESSFUL) {
+									int result;
+	
+									result = do_unlink(pentry->input_file);
+									if(result < 0) {
+										fprintf(stderr, "cannot delete %s: %s\n", pentry->input_file,
+												strerror(errno));
+									}
+								} else do_unlink(pentry->output_file);
+							}
+						}
 						break;
 					case OP_DECRYPT:
 						size = get_file_size(pentry->output_file);
+						if(pentry->decrypt_status == DECRYPT_SUCCESSFUL && true == delete_files) {
+							int result;
+
+							result = do_unlink(pentry->input_file);
+							if(result < 0) {
+								fprintf(stderr, "cannot delete %s: %s\n", pentry->input_file,
+											strerror(errno));
+							}
+						}
 						break;
 					case OP_COPY:
 						size = derived_size;
 						break;
 				}
+
+
 				if(callback) 
 					(*callback)(pentry, op_type, size);
 				if(work_left > 0) {
@@ -254,13 +297,6 @@ int openssl_with_threads(struct thread_entry *array,
 
 	return count;
 		
-}
-
-
-
-void openssl_buffer_size(int size)
-{
-	buffer_size = size;
 }
 
 

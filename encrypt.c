@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/random.h>
 #include <openssl/evp.h>
@@ -30,6 +31,11 @@ static const int AES_BLOCK_SIZE = 16;
 
 static const char magic[4] = { 'H', 'Y', 'P', 'N' };
 
+
+static bool test_special_file(int fd)
+{
+	return false;
+}
 
 /* from demos/cipher/aesgcm.c */
 static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int optional_bytes, 
@@ -391,6 +397,7 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 	int output_fd;
 	// int retval;
 	enum encrypt_result ret; 
+	
 	bool result;
 	char iv[12];
 	size_t output_bytes;
@@ -407,6 +414,9 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 		return ENCRYPT_CANNOT_OPEN_INPUT;
 	}
 
+	if(false == test_special_file(input_fd)) {
+		/* test magic */
+	}
 	output_fd = open(output, O_WRONLY | O_CREAT, 0666);
 	if (output_fd < 0) {
 		save_errno = errno;
