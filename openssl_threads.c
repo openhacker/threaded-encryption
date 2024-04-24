@@ -23,8 +23,6 @@ struct thread_info {
 
 
 
-static int buffer_size = 8192;
-
 static uint8_t AES_key[AES_256_KEY_SIZE];
 static enum openssl_operation op_type;
 static const size_t derived_size = 1024 * 1024 * 1024;  // for OP_COPY and /dev/zero
@@ -139,7 +137,7 @@ static bool do_unlink(const char *name)
 int openssl_with_threads(struct thread_entry *array, 
 		int num_entries, 
 		int num_threads,
-		uint8_t AES_key[AES_256_KEY_SIZE],
+		const uint8_t AES_key[AES_256_KEY_SIZE],
 		enum openssl_operation type,
 		bool  (*callback)(struct thread_entry *entry, enum openssl_operation op_type, size_t size) )
 {
@@ -216,7 +214,7 @@ int openssl_with_threads(struct thread_entry *array,
 		for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
 			if(pthread->done == true) {
 				struct thread_entry *pentry;
-				int size;
+				int size = 0;
 
 				count++;
 				pentry = pthread->work;

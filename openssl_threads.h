@@ -27,12 +27,10 @@ enum openssl_operation { OP_COPY, OP_ENCRYPT, OP_DECRYPT };
 int openssl_with_threads(struct thread_entry *array, 
 		int num_entries, 
 		int num_threads,
-		uint8_t AES_key[AES_256_KEY_SIZE],
+		const uint8_t AES_key[AES_256_KEY_SIZE],
 		enum openssl_operation op_type,
 		bool  (*callback)(struct thread_entry *entry, enum openssl_operation op_type, size_t size) );
 
-
-void openssl_buffer_size(int size);
 
 #endif
 

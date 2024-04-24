@@ -14,6 +14,7 @@ static bool show_callback = false;
 
 static struct timeval start_time;
 
+
 static void usage(const char *string) 
 {
 
@@ -21,9 +22,10 @@ static void usage(const char *string)
 		fprintf(stderr, "%s\n", string);
 	printf("\t-d <directory>\n");
 	printf("\t-t <num threads\n");
-	printf("\t-E encrypt (default)\n");
-	printf("\t-D decrypt\n");
-	printf("-n -- write to /dev/null\n");
+	printf("\t-E     encrypt (default)\n");
+	printf("\t-D     decrypt\n");
+	printf("\t-n     write to /dev/null (for benchmarking)\n");
+	printf("\t-s     show each callback\n");
 	exit(1);
 }
 
@@ -68,8 +70,9 @@ static bool callback(struct thread_entry *pentry, enum openssl_operation op, siz
 						pentry->input_file, pentry->decrypt_status);
 				return false;
 			}
+			break;
 		default:
-			fprintf(stderr, "Probelm with op in %s\n", __func__);
+			fprintf(stderr, "Problem with op in %s\n", __func__);
 			break;
 	}
 
@@ -88,7 +91,7 @@ static char **find_files(const char *directory)
 	const int alloc_size = 1024;
 	size_t bytes_read;
 	int i = 0;
-	int string_size;
+	int string_size __attribute__((unused)) ;
 	char **files = NULL;
 
 	snprintf(command, sizeof command, "find %s -type f", directory);
@@ -110,7 +113,6 @@ static char **find_files(const char *directory)
 
 
 	string_size = strlen(output);
-	// printf("bytes = %d, output = %s\n", string_size, output);
 
 	output_tokens = output;
 	while(1) {
@@ -140,7 +142,6 @@ int main(int argc, char *argv[])
 	int num_threads = 1;
 	char **files;
 	bool write_to_dev_null = false;
-	char *cp;
 	int num_elements =0;
 	struct thread_entry *entries;
 	int result;
@@ -149,7 +150,7 @@ int main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv,  "DEd:nt:");
+		c = getopt(argc, argv,  "sDEd:nt:");
 		if(c == -1)
 			break;
 
@@ -159,6 +160,9 @@ int main(int argc, char *argv[])
 				break;
 			case 't':
 				num_threads = atoi(optarg);
+				break;
+			case 's':
+				show_callback = true;
 				break;
 			case 'n':
 				write_to_dev_null = true;
@@ -203,8 +207,21 @@ int main(int argc, char *argv[])
 		} else {
 			char temp_buffer[PATH_MAX];
 
-			snprintf(temp_buffer, sizeof temp_buffer, "%s.hypn", files[i]);
-			pentry->output_file = strdup(temp_buffer);
+			if(op == OP_ENCRYPT) {
+				snprintf(temp_buffer, sizeof temp_buffer, "%s.hypn", files[i]);
+				pentry->output_file = strdup(temp_buffer);
+			} else if(op == OP_DECRYPT) {
+				char *cp;
+
+				pentry->output_file = strdup(files[i]);
+				cp = strrchr(pentry->output_file, '.');
+				if(!cp) {
+					fprintf(stderr, "No trailing .\n");
+					abort();
+				}
+				*cp = '\0';
+			}
+				
 		}
 	}
 
