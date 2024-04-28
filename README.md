@@ -141,7 +141,7 @@ The makefile is structured with:
   * XCFLAGS -- to pass arbitrary commands to the C compile
   * DEFINES -- software currently uses  
         * -DSAVE_IV -- save IV in the output file during encryption (could be random)  
-        * -DZERO_IV -- IV is a byte stream of zeros -- useful for testing and not saving the IV
+        * -DZERO_IV -- IV is a byte stream of zeros -- useful for testing and not saving the IV  
         * -DBUFFER_SIZE=nnn -- set the BUFFER_SIZE instead of 8k 
 
 
