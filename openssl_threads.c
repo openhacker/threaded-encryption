@@ -4,8 +4,10 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <errno.h>
+#include <sys/resource.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include <stdatomic.h>
 #include "openssl_threads.h"
@@ -148,8 +150,14 @@ int openssl_with_threads(struct thread_entry *array,
 	int count = 0;
 	int num_condition = 0;
 	bool delete_files = true;
-
-
+	size_t bytes_processed = 0;
+	struct timeval start_time;
+       	struct timeval	end_time;
+       	struct timeval after_sync;	
+	struct rusage start_rusage;
+	struct rusage end_rusage;
+	struct timeval delta_time;
+	double seconds;
 
 	if(num_threads < 1) 
 		return 0;
@@ -159,6 +167,9 @@ int openssl_with_threads(struct thread_entry *array,
 	
 	if(false == create_thread_structure(num_threads))
 		return 0;	/* problem created structure */
+
+	gettimeofday(&start_time, NULL);
+	getrusage(RUSAGE_SELF, &start_rusage);
 
 	op_type =  type;
 	if(getenv("DEV_ZERO"))
@@ -255,9 +266,16 @@ int openssl_with_threads(struct thread_entry *array,
 						break;
 				}
 
+				bytes_processed += size;
 
-				if(callback) 
-					(*callback)(pentry, op_type, size);
+				if(callback)  {
+					bool stop;
+					stop = (*callback)(pentry, op_type, size);
+
+					if(stop == false) {
+						fprintf(stderr, "want to stop\n");
+					}
+				}
 				if(work_left > 0) {
 					pthread->work = array + (num_entries - work_left);
 					pthread_mutex_unlock(&pthread->work_available);
@@ -289,9 +307,21 @@ int openssl_with_threads(struct thread_entry *array,
 			break;
 		}
 	}
+
+
+	gettimeofday(&end_time, NULL);
+	getrusage(RUSAGE_SELF, &end_rusage);
+
 	close(pipe_fds[0]);
 	close(pipe_fds[1]);
+	/* destroy mutexes  for each thread */
 	free(thread_info);
+
+	timersub(&end_time, &start_time, &delta_time);
+	seconds = delta_time.tv_sec;
+	seconds += delta_time.tv_usec / (1000.0 * 1000.0);
+	printf("bandwidth = %.3f G/sec\n", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
+
 
 	return count;
 		

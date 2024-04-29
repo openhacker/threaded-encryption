@@ -30,7 +30,7 @@ static struct threaded_entry *create_zero_entries(int num)
 }
 		
 
-static void callback(struct thread_entry *entry, enum openssl_operation op_type, size_t size )
+static bool callback(struct thread_entry *entry, enum openssl_operation op_type, size_t size )
 {
 	static int count = 0;
 
@@ -39,6 +39,7 @@ static void callback(struct thread_entry *entry, enum openssl_operation op_type,
 		printf("processed %d\n", count);
 //	printf("%d: processed %ld bytes\n", ++total_processed, size);
 	bytes_processed += size;
+	return true;
 }
 
 
@@ -80,7 +81,7 @@ main(int argc, char *argv[])
 	timersub(&end_time, &start_time, &delta_time);
 	microseconds = delta_time.tv_sec * 1000 * 1000;
 	microseconds += delta_time.tv_usec;
-	gigabytes= bytes_processed / ( 1000.0 * 1000.0 * 1000.0);
+	gigabytes= bytes_processed / ( 1024.0 * 1024.0 * 1024.0);
 	seconds = microseconds/ (1000.0 * 1000.0);
 	printf("gig/sec = %.3f\n", gigabytes/seconds);
 }
