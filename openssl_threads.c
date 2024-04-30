@@ -52,7 +52,6 @@ static bool create_thread_structure(int thread_count)
 	num_threads = thread_count;
 	thread_info = calloc(sizeof(struct thread_info), num_threads);
 
-
 	result  = pipe(pipe_fds);
 	if(result < 0) {
 		fprintf(stderr, "problem creating pipe: %s\n", strerror(errno));
@@ -136,6 +135,16 @@ static bool do_unlink(const char *name)
 }
 
 
+static double timeval_to_seconds(struct timeval t)
+{
+	double seconds;
+
+	seconds = t.tv_sec;
+	seconds += t.tv_usec / (1000.0 * 1000.0);
+
+	return seconds;
+}
+
 int openssl_with_threads(struct thread_entry *array, 
 		int num_entries, 
 		int num_threads,
@@ -153,11 +162,11 @@ int openssl_with_threads(struct thread_entry *array,
 	size_t bytes_processed = 0;
 	struct timeval start_time;
        	struct timeval	end_time;
-       	struct timeval after_sync;	
 	struct rusage start_rusage;
 	struct rusage end_rusage;
-	struct timeval delta_time;
+//	struct timeval delta_time;
 	double seconds;
+	bool report_speed = false;
 
 	if(num_threads < 1) 
 		return 0;
@@ -165,6 +174,9 @@ int openssl_with_threads(struct thread_entry *array,
 	if(getenv("NO_DELETE"))
 		delete_files = false;
 	
+	if(getenv("REPORT_SPEED"))
+		report_speed = true;
+
 	if(false == create_thread_structure(num_threads))
 		return 0;	/* problem created structure */
 
@@ -317,10 +329,22 @@ int openssl_with_threads(struct thread_entry *array,
 	/* destroy mutexes  for each thread */
 	free(thread_info);
 
-	timersub(&end_time, &start_time, &delta_time);
-	seconds = delta_time.tv_sec;
-	seconds += delta_time.tv_usec / (1000.0 * 1000.0);
-	printf("bandwidth = %.3f G/sec\n", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
+	if(true == report_speed) {
+		struct timeval delta_time;
+		struct timeval delta_usertime;
+		struct timeval delta_systime;
+
+		timersub(&end_time, &start_time, &delta_time);
+		seconds = delta_time.tv_sec;
+		seconds += delta_time.tv_usec / (1000.0 * 1000.0);
+		printf("bandwidth = %.3f G/sec\n", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
+		timersub(&end_rusage.ru_utime, &start_rusage.ru_utime, &delta_usertime);
+		timersub(&end_rusage.ru_stime, &start_rusage.ru_stime, &delta_systime);
+		printf("wall time =  %.3f user time = %.3f, systime = %.3f\n",
+			timeval_to_seconds(delta_time), timeval_to_seconds(delta_usertime), timeval_to_seconds(delta_systime));
+		
+		
+	}
 
 
 	return count;
