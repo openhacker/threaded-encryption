@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <libgen.h>
+#include <assert.h>
 #include <string.h>
 #include <sys/time.h>
 #include "openssl_threads.h"
@@ -26,6 +28,7 @@ static void usage(const char *string)
 	printf("\t-D     decrypt\n");
 	printf("\t-n     write to /dev/null (for benchmarking)\n");
 	printf("\t-s     show each callback\n");
+	printf("\t-o     output directory (infers $NO_DELETE)\n");
 	exit(1);
 }
 
@@ -146,11 +149,12 @@ int main(int argc, char *argv[])
 	struct thread_entry *entries;
 	int result;
 	enum openssl_operation op = OP_ENCRYPT;
+	char *output_directory = NULL;
 
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv,  "sDEd:nt:");
+		c = getopt(argc, argv,  "sDEd:nt:o:");
 		if(c == -1)
 			break;
 
@@ -166,6 +170,7 @@ int main(int argc, char *argv[])
 				break;
 			case 'n':
 				write_to_dev_null = true;
+				setenv("NO_DELETE", "1", 1);
 				break;
 			case 'h':
 				usage(NULL);
@@ -174,6 +179,10 @@ int main(int argc, char *argv[])
 				break;
 			case 'D':
 				op = OP_DECRYPT;
+				break;
+			case 'o':
+				output_directory = strdup(optarg);
+				setenv("NO_DELETE", "1", 1);
 				break;
 			default:
 				usage("illegal argument");
@@ -185,6 +194,10 @@ int main(int argc, char *argv[])
 	if(!directory) {
 		usage("No directory selected");
 	}
+
+	if(!output_directory)
+		output_directory = directory;
+
 
 	files = find_files(directory);
 
@@ -206,20 +219,29 @@ int main(int argc, char *argv[])
 			pentry->output_file = strdup("/dev/null");
 		} else {
 			char temp_buffer[PATH_MAX];
+			char input_buffer[PATH_MAX];
+			char *cp;
+
+			strcpy(input_buffer, files[i]);
+			cp = basename(input_buffer);
+			assert(cp);
+			
 
 			if(op == OP_ENCRYPT) {
-				snprintf(temp_buffer, sizeof temp_buffer, "%s.hypn", files[i]);
+
+				snprintf(temp_buffer, sizeof temp_buffer, "%s/%s.hypn", output_directory, cp);
 				pentry->output_file = strdup(temp_buffer);
 			} else if(op == OP_DECRYPT) {
-				char *cp;
+				char *suffix;
 
-				pentry->output_file = strdup(files[i]);
-				cp = strrchr(pentry->output_file, '.');
-				if(!cp) {
+				suffix = strrchr(cp, '.');
+				if(!suffix) {
 					fprintf(stderr, "No trailing .\n");
 					abort();
 				}
-				*cp = '\0';
+				*suffix = '\0';
+				snprintf(temp_buffer, sizeof temp_buffer, "%s/%s", output_directory, cp);
+				pentry->output_file = strdup(temp_buffer);
 			}
 				
 		}
@@ -230,7 +252,7 @@ int main(int argc, char *argv[])
 	printf("result = %d\n", result);
 	printf("bytes processed = %ld\n", total_bytes);
 	
-	system("set -x; time -p sync");
+//	system("set -x; time -p sync");
 
 }
 
