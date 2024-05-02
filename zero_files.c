@@ -10,11 +10,10 @@
 static uint8_t aes_key[AES_256_KEY_SIZE] = { 0 } ;
 
 
-static int total_processed = 0;
 static long long unsigned bytes_processed;
 
 
-static struct threaded_entry *create_zero_entries(int num)
+static struct thread_entry *create_zero_entries(int num)
 {
 	struct thread_entry *entries;
 	struct thread_entry *pentry;
@@ -45,20 +44,12 @@ static bool callback(struct thread_entry *entry, enum openssl_operation op_type,
 }
 
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 
 	struct thread_entry *entries;
 	int num = 100;
 	int num_threads = 1;
-	struct timeval start_time;
-	struct rusage start_rusage;
-	struct timeval end_time;
-	struct rusage end_rusage;
-	double microseconds;
-	double seconds;
-	double gigabytes;
-	struct timeval delta_time;
 
 
 	if(argc > 2)
@@ -75,6 +66,8 @@ main(int argc, char *argv[])
 	setenv("DEV_ZERO", "1", 1);
 
 	openssl_with_threads(entries, num, num_threads, aes_key,  OP_ENCRYPT, callback);
+
+	return 0;
 
 }
 
