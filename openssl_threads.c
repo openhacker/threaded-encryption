@@ -154,7 +154,7 @@ int openssl_with_threads(struct thread_entry *array,
 		bool  (*callback)(struct thread_entry *entry, enum openssl_operation op_type, size_t size) )
 {
 	int i;
-	int jobs_processed;
+	int jobs_processed = 0;
 	struct thread_info *pthread;
 	int work_left = num_entries;
 	int count = 0;
@@ -255,28 +255,18 @@ int openssl_with_threads(struct thread_entry *array,
 							size = get_file_size(pentry->input_file);
 							if(true == delete_files) {
 								if(pentry->encrypt_status == ENCRYPT_SUCCESSFUL) {
-									int result;
-	
-									result = do_unlink(pentry->input_file);
-									if(result < 0) {
-										fprintf(stderr, "cannot delete %s: %s\n", pentry->input_file,
-												strerror(errno));
-									}
+									do_unlink(pentry->input_file);
 								} else do_unlink(pentry->output_file);
 							}
 						}
 						break;
 					case OP_DECRYPT:
 						size = get_file_size(pentry->output_file);
-						if(pentry->decrypt_status == DECRYPT_SUCCESSFUL && true == delete_files) {
-							int result;
-
-							result = do_unlink(pentry->input_file);
-							if(result < 0) {
-								fprintf(stderr, "cannot delete %s: %s\n", pentry->input_file,
-											strerror(errno));
-							}
-						}
+						if(true == delete_files) {
+							if(pentry->decrypt_status == DECRYPT_SUCCESSFUL) {
+								do_unlink(pentry->input_file);
+							} else do_unlink(pentry->output_file);
+						}	
 						break;
 					case OP_COPY:
 						size = derived_size;
