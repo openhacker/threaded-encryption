@@ -8,7 +8,7 @@
 #include "openssl_threads.h"
 
 static const uint8_t default_key[AES_256_KEY_SIZE] = { 0 };
-
+static const uint8_t alternate_key[AES_256_KEY_SIZE] = { "this is another key" };
 
 static long int total_bytes;
 
@@ -29,6 +29,7 @@ static void usage(const char *string)
 	printf("\t-n     write to /dev/null (for benchmarking)\n");
 	printf("\t-s     show each callback\n");
 	printf("\t-o     output directory (infers $NO_DELETE)\n");
+	printf("\t-a	 alternate builtin key (to test failure)\n");
 	exit(1);
 }
 
@@ -150,11 +151,12 @@ int main(int argc, char *argv[])
 	int result;
 	enum openssl_operation op = OP_ENCRYPT;
 	char *output_directory = NULL;
+	const uint8_t *key_to_use = default_key;
 
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv,  "sDEd:nt:o:");
+		c = getopt(argc, argv,  "asDEd:nt:o:");
 		if(c == -1)
 			break;
 
@@ -183,6 +185,10 @@ int main(int argc, char *argv[])
 			case 'o':
 				output_directory = strdup(optarg);
 				setenv("NO_DELETE", "1", 1);
+				break;
+			case 'a':
+				printf("Using alternate key\n");
+				key_to_use = alternate_key;
 				break;
 			default:
 				usage("illegal argument");
@@ -247,7 +253,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	result = openssl_with_threads(entries, num_elements, num_threads, default_key, op, callback); 
+	result = openssl_with_threads(entries, num_elements, num_threads, key_to_use, op, callback); 
 
 	printf("result = %d\n", result);
 	printf("bytes processed = %ld\n", total_bytes);

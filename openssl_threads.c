@@ -135,6 +135,7 @@ static bool do_unlink(const char *name)
 }
 
 
+
 static double timeval_to_seconds(struct timeval t)
 {
 	double seconds;
@@ -148,7 +149,7 @@ static double timeval_to_seconds(struct timeval t)
 int openssl_with_threads(struct thread_entry *array, 
 		int num_entries, 
 		int num_threads,
-		const uint8_t AES_key[AES_256_KEY_SIZE],
+		const uint8_t parm_AES_key[AES_256_KEY_SIZE],
 		enum openssl_operation type,
 		bool  (*callback)(struct thread_entry *entry, enum openssl_operation op_type, size_t size) )
 {
@@ -168,8 +169,12 @@ int openssl_with_threads(struct thread_entry *array,
 	double seconds;
 	bool report_speed = false;
 
+
 	if(num_threads < 1) 
 		return 0;
+
+
+	memcpy(AES_key, parm_AES_key, sizeof AES_key);
 
 	if(getenv("NO_DELETE"))
 		delete_files = false;
