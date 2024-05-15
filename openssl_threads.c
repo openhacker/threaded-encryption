@@ -158,7 +158,7 @@ int openssl_with_threads(struct thread_entry *array,
 	struct thread_info *pthread;
 	int work_left = num_entries;
 	int count = 0;
-	int num_condition = 0;
+	int num_files_ended = 0;
 	bool delete_files = true;
 	size_t bytes_processed = 0;
 	struct timeval start_time;
@@ -168,6 +168,7 @@ int openssl_with_threads(struct thread_entry *array,
 //	struct timeval delta_time;
 	double seconds;
 	bool report_speed = false;
+	bool found_thread_end = false;
 
 
 	if(num_threads < 1) 
@@ -220,7 +221,7 @@ int openssl_with_threads(struct thread_entry *array,
 		pthread_mutex_unlock(&pthread->work_available);
 	}
 		
-	while(num_condition < num_entries) {
+	while(num_files_ended <= num_entries) {
 		int result;
 		char c;
 
@@ -236,7 +237,7 @@ int openssl_with_threads(struct thread_entry *array,
 				continue;
 		}
 
-		num_condition++;
+		num_files_ended++;
 
 		/* see if we need to callback, note this is done and see if more work is needed for the thread */
 		for(pthread = thread_info; pthread < thread_info + num_threads; pthread++) {
@@ -244,6 +245,7 @@ int openssl_with_threads(struct thread_entry *array,
 				struct thread_entry *pentry;
 				int size = 0;
 
+				found_thread_end = true;
 				count++;
 				pentry = pthread->work;
 				switch(op_type)  {
@@ -283,6 +285,8 @@ int openssl_with_threads(struct thread_entry *array,
 						fprintf(stderr, "want to stop\n");
 					}
 				}
+
+				pthread->done = false;
 				if(work_left > 0) {
 					pthread->work = array + (num_entries - work_left);
 					pthread_mutex_unlock(&pthread->work_available);
@@ -293,12 +297,16 @@ int openssl_with_threads(struct thread_entry *array,
 					pthread_cancel(pthread->info);
 					pthread->terminated = true;
 				}
-				pthread->done = false;
 				break;
 			}
 		}
 
-		assert(pthread < thread_info + num_threads);
+		if(false == found_thread_end) {
+			printf("didn't find thread end: count = %d, jobs_processed = %d, work_left = %d\n",
+				       			count, jobs_processed, work_left);
+			continue;
+		}
+//		assert(pthread < thread_info + num_threads);
 
 		bool not_terminated = false;
 
@@ -313,6 +321,7 @@ int openssl_with_threads(struct thread_entry *array,
 		if(not_terminated == false) {
 			break;
 		}
+		found_thread_end = false;
 	}
 
 
