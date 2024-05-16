@@ -338,14 +338,34 @@ int openssl_with_threads(struct thread_entry *array,
 		struct timeval delta_time;
 		struct timeval delta_usertime;
 		struct timeval delta_systime;
+		char *operation_string;
+
+		switch(type) {
+			case OP_COPY:
+				operation_string = "copy";
+				break;
+			case OP_ENCRYPT:
+				operation_string = "encrypt";
+				break;
+			case OP_DECRYPT:
+				operation_string = "decrypt";
+				break;
+			default:
+				operation_string = "WTF";
+				break;
+		}
 
 		timersub(&end_time, &start_time, &delta_time);
 		seconds = delta_time.tv_sec;
 		seconds += delta_time.tv_usec / (1000.0 * 1000.0);
-		printf("bandwidth = %.3f G/sec\n", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
+		printf("threads    type    files      bandwidth (G/sec)   wall time      usertime     systime\n");
+		printf(" %d       %.10s    %7d",       num_threads,  operation_string, num_entries);
+
+
+		printf(                          "      %.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
 		timersub(&end_rusage.ru_utime, &start_rusage.ru_utime, &delta_usertime);
 		timersub(&end_rusage.ru_stime, &start_rusage.ru_stime, &delta_systime);
-		printf("wall time =  %.3f user time = %.3f, systime = %.3f\n",
+		printf(                                              "       %.3f         %.3f        %.3f\n",
 			timeval_to_seconds(delta_time), timeval_to_seconds(delta_usertime), timeval_to_seconds(delta_systime));
 		
 		

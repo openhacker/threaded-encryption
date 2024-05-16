@@ -31,6 +31,7 @@ static void usage(const char *string)
 	printf("\t-s     show each callback\n");
 	printf("\t-o     output directory (infers $NO_DELETE)\n");
 	printf("\t-a	 alternate builtin key (to test failure)\n");
+	printf("\t-S     perform sync at end\n");
 	exit(1);
 }
 
@@ -269,11 +270,11 @@ int main(int argc, char *argv[])
 
 	result = openssl_with_threads(entries, num_elements, num_threads, key_to_use, op, callback); 
 
-	printf("result = %d\n", result);
-	printf("bytes processed = %ld\n", total_bytes);
+//	printf("result = %d\n", result);
+//      printf("bytes processed = %ld\n", total_bytes);
 	
 	if(true == add_sync)
-		system("echo doing sync; time -p sync");
+		system("command time -f \"sync %e seconds\"  sync");
 
 }
 
