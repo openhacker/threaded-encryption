@@ -75,6 +75,7 @@ static void *encrypt_decrypt(void *args)
 
 		current_work = info->work;
 
+//		printf("input file = %s, output_file = %s\n", current_work->input_file, current_work->output_file);
 		switch(op_type) {
 			case OP_ENCRYPT:
 				current_work->encrypt_status = do_encrypt(current_work->input_file, current_work->output_file, 

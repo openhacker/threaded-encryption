@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <libgen.h>
+#include <limits.h>
 #include <assert.h>
 #include <string.h>
 #include <sys/time.h>
@@ -88,7 +89,7 @@ static bool callback(struct thread_entry *pentry, enum openssl_operation op, siz
 static char **find_files(const char *directory)
 {
 	FILE *stream;
-	char command[300];
+	char command[PATH_MAX];
 	char *output = NULL;
 	char *output_tokens;
 	int loop_times = 0;
@@ -98,7 +99,7 @@ static char **find_files(const char *directory)
 	int string_size __attribute__((unused)) ;
 	char **files = NULL;
 
-	snprintf(command, sizeof command, "find %s -type f", directory);
+	snprintf(command, sizeof command, "cd %s; find . -type f", directory);
 
 
 	stream = popen(command, "r");
@@ -152,11 +153,12 @@ int main(int argc, char *argv[])
 	enum openssl_operation op = OP_ENCRYPT;
 	char *output_directory = NULL;
 	const uint8_t *key_to_use = default_key;
+	bool add_sync = false;
 
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv,  "asDEd:nt:o:");
+		c = getopt(argc, argv,  "SasDEd:nt:o:");
 		if(c == -1)
 			break;
 
@@ -166,6 +168,9 @@ int main(int argc, char *argv[])
 				break;
 			case 't':
 				num_threads = atoi(optarg);
+				break;
+			case 'S':
+				add_sync = true;
 				break;
 			case 's':
 				show_callback = true;
@@ -217,36 +222,45 @@ int main(int argc, char *argv[])
 
 	for(int i = 0; i < num_elements; i++) {
 		struct thread_entry *pentry;
+		char input_file[PATH_MAX];
 
 		pentry = &entries[i];
-		pentry->input_file = strdup(files[i]);
+		snprintf(input_file, sizeof input_file, "%s/%s", directory, files[i]);
+		pentry->input_file = strdup(input_file);
 
 		if(true == write_to_dev_null) {
 			pentry->output_file = strdup("/dev/null");
 		} else {
 			char temp_buffer[PATH_MAX];
 			char input_buffer[PATH_MAX];
-			char *cp;
+			char *base;
+			char *dir;
 
 			strcpy(input_buffer, files[i]);
-			cp = basename(input_buffer);
-			assert(cp);
+
+			base = basename(input_buffer);
+			dir = dirname(input_buffer);
+			assert(dir);
+			assert(base);
 			
+//			printf("dir = %s, base = %s\n", dir, base);
 
 			if(op == OP_ENCRYPT) {
 
-				snprintf(temp_buffer, sizeof temp_buffer, "%s/%s.hypn", output_directory, cp);
+				snprintf(temp_buffer, sizeof temp_buffer, "%s/%s/%s.hypn", 
+							output_directory, dir, base);
 				pentry->output_file = strdup(temp_buffer);
 			} else if(op == OP_DECRYPT) {
 				char *suffix;
 
-				suffix = strrchr(cp, '.');
+				suffix = strrchr(base, '.');
 				if(!suffix) {
 					fprintf(stderr, "No trailing .\n");
 					abort();
 				}
 				*suffix = '\0';
-				snprintf(temp_buffer, sizeof temp_buffer, "%s/%s", output_directory, cp);
+				snprintf(temp_buffer, sizeof temp_buffer, "%s/%s/%s",
+					       	output_directory, dir, base);
 				pentry->output_file = strdup(temp_buffer);
 			}
 				
@@ -258,7 +272,8 @@ int main(int argc, char *argv[])
 	printf("result = %d\n", result);
 	printf("bytes processed = %ld\n", total_bytes);
 	
-//	system("set -x; time -p sync");
+	if(true == add_sync)
+		system("echo doing sync; time -p sync");
 
 }
 
