@@ -25,6 +25,7 @@ struct thread_info {
 
 
 
+static char hostname[128];
 static uint8_t AES_key[AES_256_KEY_SIZE];
 static enum openssl_operation op_type;
 static const size_t derived_size = 1024 * 1024 * 1024;  // for OP_COPY and /dev/zero
@@ -159,6 +160,7 @@ int openssl_with_threads(struct thread_entry *array,
 	struct thread_info *pthread;
 	int work_left = num_entries;
 	int count = 0;
+	int result;
 	int num_files_ended = 0;
 	bool delete_files = true;
 	size_t bytes_processed = 0;
@@ -175,6 +177,11 @@ int openssl_with_threads(struct thread_entry *array,
 	if(num_threads < 1) 
 		return 0;
 
+	result = gethostname(hostname, sizeof hostname);
+	if(result < 0) {
+		fprintf(stderr, "gethostname failed: %s\n", strerror(errno));
+		exit(1);
+	}
 
 	memcpy(AES_key, parm_AES_key, sizeof AES_key);
 
@@ -358,11 +365,11 @@ int openssl_with_threads(struct thread_entry *array,
 		timersub(&end_time, &start_time, &delta_time);
 		seconds = delta_time.tv_sec;
 		seconds += delta_time.tv_usec / (1000.0 * 1000.0);
-		printf("threads    type    files      bandwidth (G/sec)   wall time      usertime     systime\n");
-		printf(" %d       %.10s    %7d",       num_threads,  operation_string, num_entries);
+		printf("hostname        threads    type    files      bandwidth (G/sec)   wall time      usertime     systime\n");
+		printf("%-14s  %5d   %.10s  %7d",       hostname, num_threads,  operation_string, num_entries);
 
 
-		printf(                          "      %.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
+		printf(                          "        %.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
 		timersub(&end_rusage.ru_utime, &start_rusage.ru_utime, &delta_usertime);
 		timersub(&end_rusage.ru_stime, &start_rusage.ru_stime, &delta_systime);
 		printf(                                              "       %.3f         %.3f        %.3f\n",

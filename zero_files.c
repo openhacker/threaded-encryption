@@ -61,7 +61,6 @@ int main(int argc, char *argv[])
 	num = 100;
 
 	entries = create_zero_entries(num);
-	printf("threads =  %d\n", num_threads);
 
 	setenv("DEV_ZERO", "1", 1);
 
