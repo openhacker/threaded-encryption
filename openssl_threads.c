@@ -366,7 +366,7 @@ int openssl_with_threads(struct thread_entry *array,
 		seconds = delta_time.tv_sec;
 		seconds += delta_time.tv_usec / (1000.0 * 1000.0);
 		printf("hostname        threads    type    files      bandwidth (G/sec)   wall time      usertime     systime\n");
-		printf("%-14s  %5d   %.10s  %7d",       hostname, num_threads,  operation_string, num_entries);
+		printf("%-14.14s  %5d   %.10s  %7d",       hostname, num_threads,  operation_string, num_entries);
 
 
 		printf(                          "        %.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
