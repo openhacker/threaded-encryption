@@ -3,6 +3,7 @@
 
 #include <limits.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "encrypt.h"
 
 
@@ -18,6 +19,8 @@ struct thread_entry {
 	union {
 		enum decrypt_result decrypt_status;
 		enum encrypt_result encrypt_status;
+		bool copy_status;
+
 	};
 
 };

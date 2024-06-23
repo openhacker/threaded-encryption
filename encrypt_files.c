@@ -27,6 +27,7 @@ static void usage(const char *string)
 	printf("\t-t <num threads\n");
 	printf("\t-E     encrypt (default)\n");
 	printf("\t-D     decrypt\n");
+	printf("\t-C     copy\n");
 	printf("\t-n     write to /dev/null (for benchmarking)\n");
 	printf("\t-s     show each callback\n");
 	printf("\t-o     output directory (infers $NO_DELETE)\n");
@@ -76,6 +77,8 @@ static bool callback(struct thread_entry *pentry, enum openssl_operation op, siz
 						pentry->input_file, pentry->decrypt_status);
 				return false;
 			}
+			break;
+		case OP_COPY:
 			break;
 		default:
 			fprintf(stderr, "Problem with op in %s\n", __func__);
@@ -159,7 +162,7 @@ int main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv,  "SasDEd:nt:o:");
+		c = getopt(argc, argv,  "SasDCEd:nt:o:");
 		if(c == -1)
 			break;
 
@@ -187,6 +190,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'D':
 				op = OP_DECRYPT;
+				break;
+			case 'C':
+				op = OP_COPY;
 				break;
 			case 'o':
 				output_directory = strdup(optarg);
@@ -246,7 +252,7 @@ int main(int argc, char *argv[])
 			
 //			printf("dir = %s, base = %s\n", dir, base);
 
-			if(op == OP_ENCRYPT) {
+			if(op == OP_ENCRYPT || op == OP_COPY) {
 
 				snprintf(temp_buffer, sizeof temp_buffer, "%s/%s/%s.hypn", 
 							output_directory, dir, base);

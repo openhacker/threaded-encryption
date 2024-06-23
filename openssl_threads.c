@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <sys/resource.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -63,7 +64,74 @@ static bool create_thread_structure(int thread_count)
 
 }
 
-static void *encrypt_decrypt(void *args)
+static bool do_copy(const char *input, const char *output, int size)
+{
+	int flags;
+	int input_fd;
+	int output_fd;
+	int total = 0;
+
+	flags = O_RDONLY;
+#if 0
+	// not sure why this isn't compiling 
+	if(getenv("O_DIRECT"))
+		flags |= O_DIRECT;
+#endif
+
+	input_fd = open(input, flags);
+	if(input_fd < 0) {
+		fprintf(stderr, "Cannot open %s: %s\n", input, strerror(errno));
+		exit(1);
+	}
+	output_fd = open(output, O_WRONLY);
+	if(output_fd < 0) {
+		fprintf(stderr, "Cannot open %s: %s\n", output, strerror(errno));
+		exit(1);
+	}
+	while(1) {
+		char buffer[BUFFER_SIZE];
+		int bytes;
+		int result;
+		int bytes_to_read;
+
+		if(size) {
+			bytes_to_read = size -  total;
+			if(bytes_to_read > BUFFER_SIZE)
+				bytes_to_read =  BUFFER_SIZE;
+			if(!bytes_to_read)
+				break;
+		} else bytes_to_read = BUFFER_SIZE;
+
+
+		bytes = read(input_fd, buffer, bytes_to_read);
+		if(bytes == 0)
+			break;	// done
+		else if(bytes < 0) {
+			fprintf(stderr, "problem reading %s: %s\n", input, strerror(errno));
+			exit(1);
+		}
+		total += bytes;
+
+		result = write(output_fd, buffer, bytes);
+		if(result < 0) {
+			fprintf(stderr, "problem writing %s: %s\n", output, strerror(errno));
+			exit(1);
+		}
+		if(result != bytes) {
+			fprintf(stderr, "problem writing %s: wanted %d, wrote %d\n",
+					output, bytes, result);
+			exit(1);
+		}
+
+	}
+	close(input_fd);
+	close(output_fd);
+	return true;
+}
+
+	
+
+static void *encrypt_decrypt_copy(void *args)
 {
 	struct thread_info *info = (struct thread_info *) args;
 
@@ -85,6 +153,9 @@ static void *encrypt_decrypt(void *args)
 			case OP_DECRYPT:
 				current_work->decrypt_status = do_decrypt(current_work->input_file, current_work->output_file,
 								AES_key);
+				break;
+			case OP_COPY:
+				current_work->copy_status = do_copy(current_work->input_file, current_work->output_file, file_size);
 				break;
 			default:
 				fprintf(stderr, "whoops\n");
@@ -214,7 +285,7 @@ int openssl_with_threads(struct thread_entry *array,
 		pthread->done = false;
 		pthread->work = array + i;
 
-		result = pthread_create(&pthread->info, NULL,  encrypt_decrypt, pthread);
+		result = pthread_create(&pthread->info, NULL,  encrypt_decrypt_copy, pthread);
 		assert(result == 0);
 	}
 
@@ -279,7 +350,18 @@ int openssl_with_threads(struct thread_entry *array,
 						}	
 						break;
 					case OP_COPY:
-						size = derived_size;
+						if(file_size) 
+							size = derived_size;
+						else {
+							/* cannot delete derived files like /dev/zero */
+							size = get_file_size(pentry->input_file);
+							if(true == delete_files) {
+								if(pentry->copy_status == true) {
+									do_unlink(pentry->input_file);
+								} else do_unlink(pentry->output_file);
+							}
+						}
+
 						break;
 				}
 
@@ -365,7 +447,8 @@ int openssl_with_threads(struct thread_entry *array,
 		timersub(&end_time, &start_time, &delta_time);
 		seconds = delta_time.tv_sec;
 		seconds += delta_time.tv_usec / (1000.0 * 1000.0);
-		printf("hostname        threads    type    files      bandwidth (G/sec)   wall time      usertime     systime\n");
+		if(!getenv("NO_HEADING"))
+			printf("hostname        threads    type    files      bandwidth (G/sec)   wall time      usertime     systime\n");
 		printf("%-14.14s  %5d   %.10s  %7d",       hostname, num_threads,  operation_string, num_entries);
 
 

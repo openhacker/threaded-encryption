@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include "openssl_threads.h"
@@ -44,19 +45,41 @@ static bool callback(struct thread_entry *entry, enum openssl_operation op_type,
 }
 
 
+static void usage(const char *string)
+{
+	exit(1);
+}
+
 int main(int argc, char *argv[])
 {
 
 	struct thread_entry *entries;
 	int num = 100;
 	int num_threads = 1;
+	enum openssl_operation op = OP_ENCRYPT;;
+
+	while(1) {
+		int c;
+
+		c = getopt(argc, argv, "t:c");
+		if(-1 == c)
+			break;
+		switch(c) {
+			case 't':
+				num_threads = atoi(optarg);
+				break;
+			case 'c':
+				op =  OP_COPY;
+				break;
+			default:
+				usage("illegal option");
+				break;
+		}
+
+	}
 
 
-	if(argc > 2)
-		exit(1);
 
-	if(argc == 2)
-		num_threads = atoi(argv[1]);
 		
 	num = 100;
 
@@ -64,7 +87,7 @@ int main(int argc, char *argv[])
 
 	setenv("DEV_ZERO", "1", 1);
 
-	openssl_with_threads(entries, num, num_threads, aes_key,  OP_ENCRYPT, callback);
+	openssl_with_threads(entries, num, num_threads, aes_key,  op, callback);
 
 	return 0;
 
