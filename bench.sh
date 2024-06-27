@@ -3,9 +3,10 @@
 # DIRECTORY=/usr/local/space/3000
 
 # DIRECTORY=/media/leisner/encrypt-spac/100
-DIRECTORY=/media/leisner/encrypt-spac/3000
+DIRECTORY=/raid/linux/tmp/5k
 
 
+echo $(hostname) using  $(du -s -h $DIRECTORY)
 export REPORT_SPEED=1
 set -e
 

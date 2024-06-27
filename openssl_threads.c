@@ -26,7 +26,6 @@ struct thread_info {
 
 
 
-static char hostname[128];
 static uint8_t AES_key[AES_256_KEY_SIZE];
 static enum openssl_operation op_type;
 static const size_t derived_size = 1024 * 1024 * 1024;  // for OP_COPY and /dev/zero
@@ -248,11 +247,6 @@ int openssl_with_threads(struct thread_entry *array,
 	if(num_threads < 1) 
 		return 0;
 
-	result = gethostname(hostname, sizeof hostname);
-	if(result < 0) {
-		fprintf(stderr, "gethostname failed: %s\n", strerror(errno));
-		exit(1);
-	}
 
 	memcpy(AES_key, parm_AES_key, sizeof AES_key);
 
@@ -448,8 +442,8 @@ int openssl_with_threads(struct thread_entry *array,
 		seconds = delta_time.tv_sec;
 		seconds += delta_time.tv_usec / (1000.0 * 1000.0);
 		if(!getenv("NO_HEADING"))
-			printf("hostname        threads    type    files      bandwidth (G/sec)   wall time      usertime     systime\n");
-		printf("%-14.14s  %5d   %.10s  %7d",       hostname, num_threads,  operation_string, num_entries);
+			printf("threads    type    files      bandwidth (G/sec)   wall time      usertime     systime\n");
+		printf("  %5d   %.10s  %7d",       num_threads,  operation_string, num_entries);
 
 
 		printf(                          "        %.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
