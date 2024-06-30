@@ -3,7 +3,9 @@
 # DIRECTORY=/usr/local/space/3000
 
 # DIRECTORY=/media/leisner/encrypt-spac/100
-DIRECTORY=/raid/linux/tmp/5k
+# DIRECTORY=/raid/linux/tmp/5k
+DIRECTORY=/media/leisner/space/10k
+num_threads=2
 
 
 echo $(hostname) using  $(du -s -h $DIRECTORY)
@@ -13,7 +15,7 @@ set -e
 first=0
 
 echo 'zero_files (in core encrption)'
-for i in 1 2 3 4
+for i in $(seq 1 $num_threads)
 do
 	if [[ $first -gt 0 ]]; then
 		export NO_HEADING=1
@@ -29,7 +31,7 @@ echo
 first=0
 
 echo no write on filesystem
-for i in 1 2 3 4
+for i in $(seq 1 $num_threads)
 do
 	if [[ $first -gt 0 ]]; then
 		export NO_HEADING=1
@@ -43,7 +45,7 @@ unset NO_HEADING
 echo
 
 echo read/write encryption/decryption
-for i in 1 2 3 4
+for i in $(seq 1 $num_threads)
 do
 	./encrypt_files -E -d $DIRECTORY  -t $i
 	first=1
