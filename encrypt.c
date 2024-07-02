@@ -15,6 +15,7 @@
 #include <string.h>
 #include <errno.h>
 #include "encrypt.h"
+#include "buffer_manager.h"
 
 static const EVP_CIPHER *cipher_type;	//  =  EVP_aes_256_gcm();
 static bool authenticated = false;	// depends on the cipher type 
@@ -25,9 +26,6 @@ static const int AES_256_BLOCK_SIZE = 32;
 static const int AES_BLOCK_SIZE = 16;
 #endif
 
-#ifndef BUFFER_SIZE
-#define BUFFER_SIZE (8 * 1024)
-#endif
 
 static const char magic[4] = { 'H', 'Y', 'P', 'N' };
 
@@ -54,6 +52,9 @@ static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int opt
 	};
 	size_t cipher_block_size = EVP_CIPHER_block_size(cipher_type);
 	size_t total_bytes_read = 0;
+	unsigned char *inbuf;
+	unsigned char *outbuf;
+	int buffer_size;
 
 	/* Create a context for the encrypt operation */
 	if ((ctx = EVP_CIPHER_CTX_new()) == NULL) {
@@ -83,15 +84,16 @@ static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int opt
 	if (!EVP_EncryptUpdate(ctx, NULL, &outlen, gcm_aad, sizeof(gcm_aad)))
 		goto err;
 #endif
+	inbuf = get_inbuf();
+	outbuf = get_outbuf();
+	buffer_size = get_buffer_size();
 
 	while (1) {
-		unsigned char inbuf[BUFFER_SIZE];
-		unsigned char outbuf[BUFFER_SIZE + cipher_block_size];
 		int bytes_read;
 		int outlen;
 		int bytes_written;
 
-		bytes_read = read(input_fd, inbuf, sizeof inbuf);
+		bytes_read = read(input_fd, inbuf, buffer_size);
 		if (!bytes_read)
 			break;
 		else if (bytes_read < 0) {
@@ -169,6 +171,9 @@ static enum decrypt_result aes_gcm_decrypt(int input_fd, int output_fd, unsigned
 	off_t start_of_data;
 	off_t off_result;
 	unsigned char buffer[1024];
+	unsigned char *inbuf;
+	unsigned char *outbuf;
+	int buffer_size;
 	int buflen;
 
 	if ((ctx = EVP_CIPHER_CTX_new()) == NULL) {
@@ -219,14 +224,16 @@ static enum decrypt_result aes_gcm_decrypt(int input_fd, int output_fd, unsigned
 		goto err;
 	}
 
+	inbuf = get_inbuf();
+	outbuf = get_outbuf();
+	buffer_size = get_buffer_size();
+
 	while (total_bytes_read < total_bytes_desired) {
-		unsigned char inbuf[BUFFER_SIZE];
-		unsigned char outbuf[BUFFER_SIZE + cipher_block_size];
 		int outlen;
 		int bytes_to_read;
 
-		if (total_bytes_desired - total_bytes_read > sizeof inbuf)
-			bytes_to_read = sizeof inbuf;
+		if (total_bytes_desired - total_bytes_read > buffer_size)
+			bytes_to_read = buffer_size;
 		else
 			bytes_to_read = total_bytes_desired - total_bytes_read;
 
@@ -397,7 +404,6 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 	int output_fd;
 	// int retval;
 	enum encrypt_result ret; 
-	
 	bool result;
 	char iv[12];
 	size_t output_bytes;

@@ -5,5 +5,6 @@ bool create_buffers(int size, int num_per_thread);
 void destroy_buffers(void);
 unsigned char *get_inbuf(void);
 unsigned char *get_outbuf(void);
+int get_buffer_size(void);
 
 #endif

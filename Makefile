@@ -21,7 +21,7 @@ endif
 CFLAGS=-pthread -Wall -g ${OPT}  ${XCFLAGS} ${DEFINES} ${INCLUDES}
 
 
-PROGS=encrypt-one  decrypt-one #  zero_files encrypt_files
+PROGS=encrypt-one  decrypt-one   zero_files #  encrypt_files
 all: ${PROGS}
 
 threads:	threads.o encrypt.o
@@ -34,7 +34,7 @@ encrypt-one:	encrypt-one.o encrypt.o buffer_manager.o
 decrypt-one:	decrypt-one.o encrypt.o buffer_manager.o
 	${CC}  -pthread  $^ -o $@ ${LIBS} 
 
-zero_files:	zero_files.o openssl_threads.o encrypt.o
+zero_files:	zero_files.o openssl_threads.o encrypt.o buffer_manager.o
 	${CC} -pthread  $^ -o $@ ${LIBS} 
 
 encrypt_files:	encrypt_files.o openssl_threads.o encrypt.o
