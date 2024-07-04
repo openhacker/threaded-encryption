@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include "openssl_threads.h"
 #include "buffer_manager.h"
@@ -25,6 +26,8 @@ struct thread_info {
 };
 
 
+int buffer_size = 16 * 1024;
+int num_buffers = 1;
 
 static uint8_t AES_key[AES_256_KEY_SIZE];
 static enum openssl_operation op_type;
@@ -130,11 +133,20 @@ static bool do_copy(const char *input, const char *output, int size)
 	return true;
 }
 
-	
+/* needs a void arg  to make pthreads happy */
+static void pthread_destroy_buffers(void *p)
+{
+	destroy_buffers();
+}
+
 
 static void *encrypt_decrypt_copy(void *args)
 {
 	struct thread_info *info = (struct thread_info *) args;
+
+	create_buffers(buffer_size, num_buffers);
+
+	pthread_cleanup_push(pthread_destroy_buffers, NULL);
 
 	while(1) {
 		struct thread_entry *current_work;
@@ -176,6 +188,7 @@ static void *encrypt_decrypt_copy(void *args)
 
 	}
 
+	pthread_cleanup_pop(1);
 	return NULL;
 }
 
