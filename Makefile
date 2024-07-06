@@ -2,8 +2,6 @@
 #  -DSAVE_IV -- save IV in file (needed for random IV)
 # use XCFLAGS or DEFINE for this
 DEFINES += -DSAVE_IV
-# 1M buffer
-# DEFINES += "-DBUFFER_SIZE=(64 * 1024)"
 # DEFINES +=-DZERO_IV
 CC=gcc
 OPT= -O2
@@ -21,7 +19,7 @@ endif
 CFLAGS=-pthread -Wall -g ${OPT}  ${XCFLAGS} ${DEFINES} ${INCLUDES}
 
 
-PROGS=encrypt-one  decrypt-one   zero_files #  encrypt_files
+PROGS=encrypt-one  decrypt-one   zero_files  encrypt_files
 all: ${PROGS}
 
 threads:	threads.o encrypt.o
@@ -37,7 +35,7 @@ decrypt-one:	decrypt-one.o encrypt.o buffer_manager.o
 zero_files:	zero_files.o openssl_threads.o encrypt.o buffer_manager.o
 	${CC} -pthread  $^ -o $@ ${LIBS} 
 
-encrypt_files:	encrypt_files.o openssl_threads.o encrypt.o
+encrypt_files:	encrypt_files.o openssl_threads.o encrypt.o buffer_manager.o
 	${CC}  -pthread $^ -o $@ ${LIBS} 
 
 

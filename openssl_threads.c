@@ -21,6 +21,7 @@ struct thread_info {
 	pthread_mutex_t work_available;
 	bool done;	/* work is done */
 	bool terminated;	/* thread doesn't exist anymore */
+	bool do_terminate;	/* single thread to exit */
 	uint8_t *input_buffer;	/* malloced data */
 	uint8_t *output_buffer;	/* malloced data */
 };
@@ -133,20 +134,12 @@ static bool do_copy(const char *input, const char *output, int size)
 	return true;
 }
 
-/* needs a void arg  to make pthreads happy */
-static void pthread_destroy_buffers(void *p)
-{
-	destroy_buffers();
-}
-
-
 static void *encrypt_decrypt_copy(void *args)
 {
 	struct thread_info *info = (struct thread_info *) args;
 
 	create_buffers(buffer_size, num_buffers);
 
-	pthread_cleanup_push(pthread_destroy_buffers, NULL);
 
 	while(1) {
 		struct thread_entry *current_work;
@@ -154,9 +147,12 @@ static void *encrypt_decrypt_copy(void *args)
 		int result;
 
 		pthread_mutex_lock(&info->work_available);
+		if(info->do_terminate == true) {
+			destroy_buffers();
+			pthread_exit(NULL);
+		}
 
 		current_work = info->work;
-
 //		printf("input file = %s, output_file = %s\n", current_work->input_file, current_work->output_file);
 		switch(op_type) {
 			case OP_ENCRYPT:
@@ -188,7 +184,6 @@ static void *encrypt_decrypt_copy(void *args)
 
 	}
 
-	pthread_cleanup_pop(1);
 	return NULL;
 }
 
@@ -392,8 +387,17 @@ int openssl_with_threads(struct thread_entry *array,
 					work_left--;
 					jobs_processed++;
 				} else { 
-					// no more work for thread
-					pthread_cancel(pthread->info);
+					void *res;
+
+					pthread->do_terminate = true;
+					pthread_mutex_unlock(&pthread->work_available);
+
+					if(pthread_join(pthread->info, &res) != 0) {
+						fprintf(stderr, "pthread_join problem: %d: %s\n", pthread->info, strerror(errno));
+						exit(1);
+					}
+
+
 					pthread->terminated = true;
 				}
 				break;

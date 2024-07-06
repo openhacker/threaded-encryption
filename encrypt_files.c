@@ -33,6 +33,7 @@ static void usage(const char *string)
 	printf("\t-o     output directory (infers $NO_DELETE)\n");
 	printf("\t-a	 alternate builtin key (to test failure)\n");
 	printf("\t-S     perform sync at end\n");
+	printf("\t-b <buffer size>\n");
 	exit(1);
 }
 
@@ -162,11 +163,14 @@ int main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv,  "SasDCEd:nt:o:");
+		c = getopt(argc, argv,  "SasDCEd:nt:o:b:");
 		if(c == -1)
 			break;
 
 		switch(c) {
+			case 'b':
+				buffer_size = strtol(optarg, NULL, 10);
+				break;
 			case 'd':
 				directory = strdup(optarg);
 				break;
