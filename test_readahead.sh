@@ -1,6 +1,8 @@
 #! /bin/bash
 
-DIRECTORY=/usr/local/tmp/100
+# DIRECTORY=/usr/local/tmp/100
+DIRECTORY=/raid/linux/tmp/100
+
 export REPORT_SPEED=1
 
 function drop_caches
@@ -60,7 +62,6 @@ do
 	echo buffer_size = $buffer_size
 	for threads in 1 2 
 	do
-		echo buffer_size = $buffer_size
 		drop_caches
 		 ./encrypt_files  -E -t $threads  -b $buffer_size -d $DIRECTORY
 		 export NO_HEADING=1
@@ -82,7 +83,6 @@ do
 	echo buffer_size = $buffer_size
 	for threads in 1 2 
 	do
-		echo buffer_size = $buffer_size
 		drop_caches
 		 ./encrypt_files  -E -t $threads  -b $buffer_size -d $DIRECTORY
 		 export NO_HEADING=1
