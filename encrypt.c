@@ -3,6 +3,9 @@
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <threads.h>
+// #include <pthread.h>
+#define _GNU_SOURCE	// for readahead
 #include <fcntl.h>
 #include <sys/random.h>
 #include <openssl/evp.h>
@@ -12,8 +15,10 @@
 #include <openssl/rand.h>
 #include <openssl/bio.h>
 #include <openssl/core_names.h>
+#include <sys/stat.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/time.h>
 #include "encrypt.h"
 #include "buffer_manager.h"
 
@@ -397,6 +402,40 @@ static bool construct_iv(char *iv, int size)
 }
 
 
+static thread_local int readahead_fd;
+
+static void *thread_readahead(void *args)
+{
+	struct stat statbuf;
+	int fd = *(int *) args;
+	int result;
+
+	
+	result = fstat(fd, &statbuf);
+	if(result < 0) {
+		fprintf(stderr, "problem with fstat: %s\n", strerror(errno));
+		exit(1);
+	}
+
+	result = readahead(fd, 0, statbuf.st_size);
+	if(result < 0) {
+		fprintf(stderr, "problems with readahead: %s\n", strerror(errno));
+		exit(1);
+	}
+	pthread_exit(NULL);
+	
+}
+
+static void do_readahead(int fd)
+{
+	pthread_t thread;
+
+	readahead_fd = fd;
+
+	pthread_create(&thread, NULL,  thread_readahead, (void *) &readahead_fd);
+}
+
+
 enum encrypt_result do_encrypt(const char *input, const char *output, size_t bytes,
 		  const uint8_t key[AES_256_BLOCK_SIZE]) 
 {
@@ -418,6 +457,11 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 			strerror(errno));
 		errno = save_errno;
 		return ENCRYPT_CANNOT_OPEN_INPUT;
+	}
+
+	if(bytes == 0) {
+		if(!getenv("NO_READAHEAD"))
+			do_readahead(input_fd);
 	}
 
 	if(false == test_special_file(input_fd)) {
@@ -484,6 +528,7 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 
 }
 
+
 enum decrypt_result do_decrypt(const char *input, const char *output,
 		const uint8_t key[AES_256_BLOCK_SIZE])
 {
@@ -503,6 +548,8 @@ enum decrypt_result do_decrypt(const char *input, const char *output,
 	if (input_fd < 0) {
 		return DECRYPT_OPEN_INPUT_FAILED;
 	}
+
+	do_readahead(input_fd);
 
 	output_fd = open(output, O_WRONLY | O_CREAT, 0666);
 	if (output_fd < 0) {

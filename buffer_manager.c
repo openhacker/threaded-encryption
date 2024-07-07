@@ -19,7 +19,6 @@ static thread_local struct buffer *thread_buffer;
 
 bool create_buffers(int size, int num_per_thread)
 {
-	printf("create buffers %d\n", gettid());
 	assert(num_per_thread == 1);
 	thread_buffer = calloc(sizeof(struct buffer), 1);
 	assert(thread_buffer);
@@ -35,7 +34,6 @@ bool create_buffers(int size, int num_per_thread)
 
 void destroy_buffers(void)
 {
-	printf("%s: %d\n", __func__, gettid());
 	assert(thread_buffer);
 	free(thread_buffer->output);
 	free(thread_buffer->input);
