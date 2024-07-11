@@ -10,7 +10,13 @@ struct buffer {
 	unsigned char *output;
 	int size;
 	int num_buffers;
+	struct timeval read_cumulative;
+	struct timeval write_cumulative;
+	int num_writes;
+	int num_reads;
 };
+
+
 
 
 static thread_local struct buffer *thread_buffer;
@@ -57,5 +63,15 @@ int get_buffer_size(void)
 	return thread_buffer->size;
 }
 
+
+int write_buffer(int fd, unsigned char *buffer, int size)
+{
+	return write(fd, buffer, size);
+}
+
+int read_buffer(int fd, unsigned char *buffer, int size)
+{
+	return read(fd, buffer, size);
+}
 
 
