@@ -149,6 +149,12 @@ static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int opt
 
 	write_buffer(output_fd, outtag, sizeof outtag);
 
+	int count;
+	struct timeval write_time;
+
+	count = write_times(&write_time);
+	printf("%d writes took %ld.%06ld\n", count, write_time.tv_sec, write_time.tv_usec);
+
 err:
 #if 0
 	if (ret == false)

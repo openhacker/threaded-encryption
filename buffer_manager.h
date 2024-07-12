@@ -8,5 +8,6 @@ unsigned char *get_outbuf(void);
 int get_buffer_size(void);
 int write_buffer(int fd, unsigned char *buffer, int size);
 int read_buffer(int fd, unsigned char *buffer, int size);
+int write_times(struct timeval *sum);
 
 #endif

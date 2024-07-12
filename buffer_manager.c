@@ -1,8 +1,11 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <threads.h>
 #include <assert.h>
+#include <sys/time.h>
+#include <string.h>
 #include "buffer_manager.h"
 
 struct buffer {
@@ -66,7 +69,19 @@ int get_buffer_size(void)
 
 int write_buffer(int fd, unsigned char *buffer, int size)
 {
-	return write(fd, buffer, size);
+	int ret_val;
+	struct timeval start;
+	struct timeval end;
+	struct timeval delta;
+
+	gettimeofday(&start, NULL);
+	ret_val = write(fd, buffer, size);
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &delta);
+	timeradd(&thread_buffer->write_cumulative, &delta, &thread_buffer->write_cumulative);
+	thread_buffer->num_writes++;
+
+	return ret_val;
 }
 
 int read_buffer(int fd, unsigned char *buffer, int size)
@@ -74,4 +89,15 @@ int read_buffer(int fd, unsigned char *buffer, int size)
 	return read(fd, buffer, size);
 }
 
+int write_times(struct timeval *sum)
+{
+	int ret;
+
+	ret = thread_buffer->num_writes;
+	thread_buffer->num_writes = 0;
+	*sum = thread_buffer->write_cumulative;
+	memset(&thread_buffer->write_cumulative,  0, sizeof(struct timeval));
+	return ret;
+}
+	
 
