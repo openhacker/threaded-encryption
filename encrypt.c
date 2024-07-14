@@ -149,11 +149,6 @@ static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int opt
 
 	write_buffer(output_fd, outtag, sizeof outtag);
 
-	int count;
-	struct timeval write_time;
-
-	count = write_times(&write_time);
-	printf("%d writes took %ld.%06ld\n", count, write_time.tv_sec, write_time.tv_usec);
 
 err:
 #if 0
@@ -428,7 +423,7 @@ static void do_readahead(int fd)
 	result = readahead(fd, 0, statbuf.st_size);
 	gettimeofday(&end, NULL);
 	timersub(&end, &start, &delta);
-	fprintf(stderr, "readahead took %d.%06d\n", delta.tv_sec, delta.tv_usec);
+	// fprintf(stderr, "readahead took %d.%06d\n", delta.tv_sec, delta.tv_usec);
 
 	if(result < 0) {
 		fprintf(stderr, "problems with readahead: %s\n", strerror(errno));

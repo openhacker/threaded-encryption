@@ -22,8 +22,6 @@ struct thread_info {
 	bool done;	/* work is done */
 	bool terminated;	/* thread doesn't exist anymore */
 	bool do_terminate;	/* single thread to exit */
-	uint8_t *input_buffer;	/* malloced data */
-	uint8_t *output_buffer;	/* malloced data */
 };
 
 
@@ -134,12 +132,24 @@ static bool do_copy(const char *input, const char *output, int size)
 	return true;
 }
 
+static void get_worktime(void)
+{
+	struct io_times io_times;
+
+	retrieve_io_times(&io_times);
+	fprintf(stderr, "reads = %d, time = %ld.%.06ld\n", io_times.num_reads, io_times.read_cumulative.tv_sec,
+						io_times.read_cumulative.tv_usec);
+
+	fprintf(stderr, "writes = %d, time = %ld.%06ld\n", io_times.num_writes, io_times.write_cumulative.tv_sec,
+								io_times.write_cumulative.tv_usec);
+}
+
+
 static void *encrypt_decrypt_copy(void *args)
 {
 	struct thread_info *info = (struct thread_info *) args;
 
 	create_buffers(buffer_size, num_buffers);
-
 
 	while(1) {
 		struct thread_entry *current_work;
@@ -158,10 +168,14 @@ static void *encrypt_decrypt_copy(void *args)
 			case OP_ENCRYPT:
 				current_work->encrypt_status = do_encrypt(current_work->input_file, current_work->output_file, 
 					file_size, AES_key );
+				if(ENCRYPT_SUCCESSFUL == current_work->encrypt_status)
+					get_worktime();
 				break;
 			case OP_DECRYPT:
 				current_work->decrypt_status = do_decrypt(current_work->input_file, current_work->output_file,
 								AES_key);
+				if(DECRYPT_SUCCESSFUL == current_work->decrypt_status)
+					get_worktime();
 				break;
 			case OP_COPY:
 				current_work->copy_status = do_copy(current_work->input_file, current_work->output_file, file_size);
@@ -377,6 +391,7 @@ int openssl_with_threads(struct thread_entry *array,
 
 					if(stop == false) {
 						fprintf(stderr, "want to stop\n");
+						exit(1);		/* need to be more elegant */
 					}
 				}
 

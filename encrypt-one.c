@@ -11,6 +11,19 @@
 
 static const uint8_t key[32] = { 0 };
 
+static void get_worktime(void)
+{
+	struct io_times io_times;
+
+	retrieve_io_times(&io_times);
+	fprintf(stderr, "reads = %d, time = %ld.%.06ld\n", io_times.num_reads, io_times.read_cumulative.tv_sec,
+						io_times.read_cumulative.tv_usec);
+
+	fprintf(stderr, "writes = %d, time = %ld.%06ld\n", io_times.num_writes, io_times.write_cumulative.tv_sec,
+								io_times.write_cumulative.tv_usec);
+}
+
+
 int main(int argc, char *argv[])
 {
 	int num_buffers = 1;
@@ -50,6 +63,7 @@ int main(int argc, char *argv[])
 	
 //	select_cipher_type(AES_256_CBC);
 	do_encrypt(input_file, output_file, 0, key);
+	get_worktime();
 	destroy_buffers();
 }
 

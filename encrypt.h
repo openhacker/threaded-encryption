@@ -24,9 +24,6 @@ enum encrypt_result {
 	ENCRYPT_CANNOT_COMPUTE_SHA256,
 	ENCRYPT_FINAL_FAILED,
 	ENCRYPT_FAILURE
-
-	
-	
 };
 
 enum decrypt_result {
