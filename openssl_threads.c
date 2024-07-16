@@ -24,6 +24,8 @@ struct thread_info {
 	bool do_terminate;	/* single thread to exit */
 };
 
+static struct io_times total_times;
+
 
 int buffer_size = 16 * 1024;
 int num_buffers = 1;
@@ -132,6 +134,24 @@ static bool do_copy(const char *input, const char *output, int size)
 	return true;
 }
 
+
+static void sum_worktime(void)
+{
+	struct io_times io_times;
+	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+	retrieve_io_times(&io_times);
+
+	pthread_mutex_lock(&mutex);
+
+	timeradd(&total_times.read_cumulative, &io_times.read_cumulative, &total_times.read_cumulative);
+	timeradd(&total_times.write_cumulative, &io_times.write_cumulative, &total_times.write_cumulative);
+	total_times.num_writes += io_times.num_writes;
+	total_times.num_reads += io_times.num_reads;
+
+	pthread_mutex_unlock(&mutex);
+
+}
 static void get_worktime(void)
 {
 	struct io_times io_times;
@@ -169,13 +189,13 @@ static void *encrypt_decrypt_copy(void *args)
 				current_work->encrypt_status = do_encrypt(current_work->input_file, current_work->output_file, 
 					file_size, AES_key );
 				if(ENCRYPT_SUCCESSFUL == current_work->encrypt_status)
-					get_worktime();
+					sum_worktime();
 				break;
 			case OP_DECRYPT:
 				current_work->decrypt_status = do_decrypt(current_work->input_file, current_work->output_file,
 								AES_key);
 				if(DECRYPT_SUCCESSFUL == current_work->decrypt_status)
-					get_worktime();
+					sum_worktime();
 				break;
 			case OP_COPY:
 				current_work->copy_status = do_copy(current_work->input_file, current_work->output_file, file_size);
@@ -486,6 +506,12 @@ int openssl_with_threads(struct thread_entry *array,
 		printf(                                              "       %.3f         %.3f        %.3f\n",
 			timeval_to_seconds(delta_time), timeval_to_seconds(delta_usertime), timeval_to_seconds(delta_systime));
 		
+		printf("read times = %d reads, total = %ld.%06ld\n", total_times.num_reads, total_times.read_cumulative.tv_sec,
+									total_times.read_cumulative.tv_usec);
+
+		printf("writetimes = %d writes, total = %ld.%06ld\n", total_times.num_writes, total_times.write_cumulative.tv_sec,
+									total_times.write_cumulative.tv_usec);
+
 		
 	}
 
