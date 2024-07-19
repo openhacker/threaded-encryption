@@ -19,7 +19,7 @@ endif
 CFLAGS=-pthread -Wall -g ${OPT}  ${XCFLAGS} ${DEFINES} ${INCLUDES}
 
 
-PROGS=encrypt-one  decrypt-one   zero_files  encrypt_files
+PROGS=encrypt-one  decrypt-one   zero_files  encrypt_files clear-cache
 all: ${PROGS}
 
 threads:	threads.o encrypt.o
@@ -37,6 +37,13 @@ zero_files:	zero_files.o openssl_threads.o encrypt.o buffer_manager.o
 
 encrypt_files:	encrypt_files.o openssl_threads.o encrypt.o buffer_manager.o
 	${CC}  -pthread $^ -o $@ ${LIBS} 
+
+
+clear-cache:	clear-cache.c
+
+suid:	clear-cache
+	sudo chown root $^
+	sudo chmod 4755 $^
 
 
 clean:
