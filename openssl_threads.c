@@ -496,22 +496,29 @@ int openssl_with_threads(struct thread_entry *array,
 		seconds = delta_time.tv_sec;
 		seconds += delta_time.tv_usec / (1000.0 * 1000.0);
 		if(!getenv("NO_HEADING"))
-			printf("threads    type    files      bandwidth (G/sec)   wall time      usertime     systime\n");
+			printf("threads    type    files      bandwidth (G/sec)   wall time      usertime     systime    reads         writes\n");
 		printf("  %5d   %.10s  %7d",       num_threads,  operation_string, num_entries);
 
 
 		printf(                          "        %.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
 		timersub(&end_rusage.ru_utime, &start_rusage.ru_utime, &delta_usertime);
 		timersub(&end_rusage.ru_stime, &start_rusage.ru_stime, &delta_systime);
-		printf(                                              "       %.3f         %.3f        %.3f\n",
+		printf(                                              "       %.3f         %.3f        %.3f",
 			timeval_to_seconds(delta_time), timeval_to_seconds(delta_usertime), timeval_to_seconds(delta_systime));
 		
-		printf("read times = %d reads, total = %ld.%06ld\n", total_times.num_reads, total_times.read_cumulative.tv_sec,
-									total_times.read_cumulative.tv_usec);
+#if 0
+		if(getenv("IO_TIMES")) {
+			printf("\t\tread times = %d reads, total = %ld.%06ld", total_times.num_reads, total_times.read_cumulative.tv_sec,
+										total_times.read_cumulative.tv_usec);
+	
+			printf("\t\twrite times = %d writes, total = %ld.%06ld\n", total_times.num_writes, total_times.write_cumulative.tv_sec,
+										total_times.write_cumulative.tv_usec);
 
-		printf("writetimes = %d writes, total = %ld.%06ld\n", total_times.num_writes, total_times.write_cumulative.tv_sec,
-									total_times.write_cumulative.tv_usec);
-
+		}
+#endif
+		printf(" %10.3f  %10.3f\n", 
+				timeval_to_seconds(total_times.read_cumulative),
+				timeval_to_seconds(total_times.write_cumulative));
 		
 	}
 

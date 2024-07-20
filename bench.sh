@@ -6,7 +6,9 @@
 # DIRECTORY=/raid/linux/tmp/5k
 DIRECTORY=/media/leisner/space/1k
 
-max_threads=2
+export IO_TIMES=1
+
+max_threads=3
 
 
 echo $(hostname) using  $(du -s -h $DIRECTORY)
@@ -31,7 +33,7 @@ echo
 
 first=0
 
-echo no write on filesystem
+echo -e '\nno write on filesystem'
 for i in $(seq 1 $max_threads)
 do
 	if [[ $first -gt 0 ]]; then
@@ -42,14 +44,12 @@ do
 	first=1
 done
 
-echo -e "\nno write (no readahead)\n"
 
 unset NO_HEADING
-echo
 
 first=0
 
-echo -e "\nno write on filesystem (no readahead)\n"
+echo -e "\nno write on filesystem (no readahead)"
 export NO_READAHEAD=1
 for i in $(seq 1 $max_threads)
 do
@@ -66,7 +66,7 @@ unset NO_HEADING
 echo
 
 unset NO_READAHEAD
-echo -e  "read/write encryption/decryption\n"
+echo -e  "\nread/write encryption/decryption"
 
 for i in $(seq 1 $max_threads)
 do
@@ -80,3 +80,18 @@ do
 	./encrypt_files -D -d $DIRECTORY -t $i
 done
 
+
+echo -e  "\nread/write encryption/decryption (NO_READAHEAD)"
+export NO_READAHEAD=1
+
+for i in $(seq 1 $max_threads)
+do
+	./clear-cache
+	./encrypt_files -E -d $DIRECTORY  -t $i
+	first=1
+	if [[ $first -gt 0 ]]; then
+		export NO_HEADING=1
+	fi
+	./clear-cache
+	./encrypt_files -D -d $DIRECTORY -t $i
+done
