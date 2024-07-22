@@ -12,6 +12,7 @@
 export IO_TIMES=1
 
 max_threads=3
+buffer_sizes=" $(( 5 * 1024 ))    $(( 64 * 1024 ))   $((1024 * 1024))"
 
 
 echo $(hostname) using  $(du -s -h $DIRECTORY)
@@ -71,16 +72,20 @@ echo
 unset NO_READAHEAD
 echo -e  "\nread/write encryption/decryption"
 
-for i in $(seq 1 $max_threads)
+for size in $buffer_sizes
 do
-	./clear-cache
-	./encrypt_files  ${SYNC} -E -d $DIRECTORY  -t $i
-	first=1
-	if [[ $first -gt 0 ]]; then
-		export NO_HEADING=1
-	fi
-	./clear-cache
-	./encrypt_files ${SYNC} -D -d $DIRECTORY -t $i
+	echo buffer = $size
+	for i in $(seq 1 $max_threads)
+	do
+		./clear-cache
+		./encrypt_files  ${SYNC} -E -d $DIRECTORY  -t $i -b $size
+		first=1
+		if [[ $first -gt 0 ]]; then
+			export NO_HEADING=1
+		fi
+		./clear-cache
+		./encrypt_files ${SYNC} -D -d $DIRECTORY -t $i -b $size
+	done
 done
 
 
