@@ -158,7 +158,6 @@ int main(int argc, char *argv[])
 	enum openssl_operation op = OP_ENCRYPT;
 	char *output_directory = NULL;
 	const uint8_t *key_to_use = default_key;
-	bool add_sync = false;
 
 	while(1) {
 		int c;
@@ -178,7 +177,7 @@ int main(int argc, char *argv[])
 				num_threads = atoi(optarg);
 				break;
 			case 'S':
-				add_sync = true;
+				do_sync = true;
 				break;
 			case 's':
 				show_callback = true;
@@ -280,11 +279,6 @@ int main(int argc, char *argv[])
 
 	result = openssl_with_threads(entries, num_elements, num_threads, key_to_use, op, callback); 
 
-//	printf("result = %d\n", result);
-//      printf("bytes processed = %ld\n", total_bytes);
-	
-	if(true == add_sync)
-		system("command time -f \"sync %e seconds\"  sync");
 
 }
 

@@ -29,6 +29,7 @@ static struct io_times total_times;
 
 int buffer_size = 16 * 1024;
 int num_buffers = 1;
+bool do_sync = false;
 
 static uint8_t AES_key[AES_256_KEY_SIZE];
 static enum openssl_operation op_type;
@@ -260,6 +261,21 @@ static double timeval_to_seconds(struct timeval t)
 	seconds += t.tv_usec / (1000.0 * 1000.0);
 
 	return seconds;
+}
+
+
+static double time_sync(void)
+{
+	struct timeval start;
+	struct timeval end;
+	struct timeval delta;
+
+	gettimeofday(&start, NULL);
+	sync();
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &delta);
+	return timeval_to_seconds(delta);
+	
 }
 
 int openssl_with_threads(struct thread_entry *array, 
@@ -495,30 +511,34 @@ int openssl_with_threads(struct thread_entry *array,
 		timersub(&end_time, &start_time, &delta_time);
 		seconds = delta_time.tv_sec;
 		seconds += delta_time.tv_usec / (1000.0 * 1000.0);
-		if(!getenv("NO_HEADING"))
-			printf("threads    type    files      bandwidth (G/sec)   wall time      usertime     systime    reads         writes\n");
+		if(!getenv("NO_HEADING")) {
+			printf("threads    type       files   bandwidth (G/sec)   wall time      usertime       systime     reads      writes");
+		      	if(true == do_sync)
+				printf("    sync");
+			printf("\n");
+		}	
 		printf("  %5d   %.10s  %7d",       num_threads,  operation_string, num_entries);
 
 
-		printf(                          "        %.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
+		printf(                          "     %9.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
 		timersub(&end_rusage.ru_utime, &start_rusage.ru_utime, &delta_usertime);
 		timersub(&end_rusage.ru_stime, &start_rusage.ru_stime, &delta_systime);
-		printf(                                              "       %.3f         %.3f        %.3f",
+		printf(                                              "    %8.3f      %8.3f      %8.3f",
 			timeval_to_seconds(delta_time), timeval_to_seconds(delta_usertime), timeval_to_seconds(delta_systime));
 		
-#if 0
-		if(getenv("IO_TIMES")) {
-			printf("\t\tread times = %d reads, total = %ld.%06ld", total_times.num_reads, total_times.read_cumulative.tv_sec,
-										total_times.read_cumulative.tv_usec);
-	
-			printf("\t\twrite times = %d writes, total = %ld.%06ld\n", total_times.num_writes, total_times.write_cumulative.tv_sec,
-										total_times.write_cumulative.tv_usec);
-
-		}
-#endif
-		printf(" %10.3f  %10.3f\n", 
+		printf(" %10.3f  %10.3f", 
 				timeval_to_seconds(total_times.read_cumulative),
 				timeval_to_seconds(total_times.write_cumulative));
+
+
+		if(true == do_sync) {
+			double seconds;
+
+			seconds = time_sync();	
+			printf("%8.3f", seconds);
+		}
+
+		printf("\n");
 		
 	}
 

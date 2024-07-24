@@ -12,6 +12,7 @@ main()
 	int result;
 
 	result = setuid(0);
+	system("echo 4 >/proc/sys/vm/drop_caches");
 	system("echo 3 >/proc/sys/vm/drop_caches");
 }
 

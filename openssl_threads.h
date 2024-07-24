@@ -37,5 +37,6 @@ int openssl_with_threads(struct thread_entry *array,
 
 extern int buffer_size;
 extern int num_buffers;
+extern bool do_sync;
 #endif
 

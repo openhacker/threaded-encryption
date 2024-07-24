@@ -9,6 +9,12 @@
 
 
 
+# so easy to remove
+function clear_cache
+{
+	./clear-cache
+}
+
 export IO_TIMES=1
 
 max_threads=3
@@ -43,7 +49,7 @@ do
 	if [[ $first -gt 0 ]]; then
 		export NO_HEADING=1
 	fi
-	./clear-cache
+	clear_cache
 	./encrypt_files -E -d $DIRECTORY -n -t $i
 	first=1
 done
@@ -60,7 +66,7 @@ do
 	if [[ $first -gt 0 ]]; then
 		export NO_HEADING=1
 	fi
-	./clear-cache
+	clear_cache
 	./encrypt_files -E -d $DIRECTORY -n -t $i
 	first=1
 done
@@ -77,13 +83,13 @@ do
 	echo buffer = $size
 	for i in $(seq 1 $max_threads)
 	do
-		./clear-cache
+		clear_cache
 		./encrypt_files  ${SYNC} -E -d $DIRECTORY  -t $i -b $size
 		first=1
 		if [[ $first -gt 0 ]]; then
 			export NO_HEADING=1
 		fi
-		./clear-cache
+		clear_cache
 		./encrypt_files ${SYNC} -D -d $DIRECTORY -t $i -b $size
 	done
 done
@@ -94,12 +100,13 @@ export NO_READAHEAD=1
 
 for i in $(seq 1 $max_threads)
 do
-	./clear-cache
+	clear_cache
 	./encrypt_files ${SYNC} -E -d $DIRECTORY  -t $i
 	first=1
 	if [[ $first -gt 0 ]]; then
 		export NO_HEADING=1
 	fi
-	./clear-cache
+	clear_cache
 	./encrypt_files ${SYNC} -D -d $DIRECTORY -t $i
 done
+echo took to run $SECONDS  seconds
