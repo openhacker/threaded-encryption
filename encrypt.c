@@ -3,6 +3,9 @@
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+// #include <threads.h>
+// #include <pthread.h>
+#define _GNU_SOURCE	// for readahead
 #include <fcntl.h>
 #include <sys/random.h>
 #include <openssl/evp.h>
@@ -12,9 +15,12 @@
 #include <openssl/rand.h>
 #include <openssl/bio.h>
 #include <openssl/core_names.h>
+#include <sys/stat.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/time.h>
 #include "encrypt.h"
+#include "buffer_manager.h"
 
 static const EVP_CIPHER *cipher_type;	//  =  EVP_aes_256_gcm();
 static bool authenticated = false;	// depends on the cipher type 
@@ -25,9 +31,6 @@ static const int AES_256_BLOCK_SIZE = 32;
 static const int AES_BLOCK_SIZE = 16;
 #endif
 
-#ifndef BUFFER_SIZE
-#define BUFFER_SIZE (8 * 1024)
-#endif
 
 static const char magic[4] = { 'H', 'Y', 'P', 'N' };
 
@@ -54,6 +57,9 @@ static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int opt
 	};
 	size_t cipher_block_size = EVP_CIPHER_block_size(cipher_type);
 	size_t total_bytes_read = 0;
+	unsigned char *inbuf;
+	unsigned char *outbuf;
+	int buffer_size;
 
 	/* Create a context for the encrypt operation */
 	if ((ctx = EVP_CIPHER_CTX_new()) == NULL) {
@@ -83,15 +89,16 @@ static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int opt
 	if (!EVP_EncryptUpdate(ctx, NULL, &outlen, gcm_aad, sizeof(gcm_aad)))
 		goto err;
 #endif
+	inbuf = get_inbuf();
+	outbuf = get_outbuf();
+	buffer_size = get_buffer_size();
 
 	while (1) {
-		unsigned char inbuf[BUFFER_SIZE];
-		unsigned char outbuf[BUFFER_SIZE + cipher_block_size];
 		int bytes_read;
 		int outlen;
 		int bytes_written;
 
-		bytes_read = read(input_fd, inbuf, sizeof inbuf);
+		bytes_read = read_buffer(input_fd, inbuf, buffer_size);
 		if (!bytes_read)
 			break;
 		else if (bytes_read < 0) {
@@ -110,7 +117,7 @@ static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int opt
 		}
 
 		/* Output encrypted block */
-		bytes_written = write(output_fd, outbuf, outlen);
+		bytes_written = write_buffer(output_fd, outbuf, outlen);
 		if (bytes_written < 0) {
 			ret = ENCRYPT_WRITE_FAILED;
 			goto err;
@@ -140,7 +147,8 @@ static enum  encrypt_result aes_gcm_encrypt(int input_fd, int output_fd, int opt
 		goto err;
 	}
 
-	write(output_fd, outtag, sizeof outtag);
+	write_buffer(output_fd, outtag, sizeof outtag);
+
 
 err:
 #if 0
@@ -169,6 +177,9 @@ static enum decrypt_result aes_gcm_decrypt(int input_fd, int output_fd, unsigned
 	off_t start_of_data;
 	off_t off_result;
 	unsigned char buffer[1024];
+	unsigned char *inbuf;
+	unsigned char *outbuf;
+	int buffer_size;
 	int buflen;
 
 	if ((ctx = EVP_CIPHER_CTX_new()) == NULL) {
@@ -206,7 +217,7 @@ static enum decrypt_result aes_gcm_decrypt(int input_fd, int output_fd, unsigned
 		goto err;
 	}
 
-	count = read(input_fd, gcm_tag, sizeof gcm_tag);
+	count = read_buffer(input_fd, gcm_tag, sizeof gcm_tag);
 	if (count < 0) {
 		ret = DECRYPT_READ_TAG_FAILED;
 		goto err;
@@ -219,18 +230,20 @@ static enum decrypt_result aes_gcm_decrypt(int input_fd, int output_fd, unsigned
 		goto err;
 	}
 
+	inbuf = get_inbuf();
+	outbuf = get_outbuf();
+	buffer_size = get_buffer_size();
+
 	while (total_bytes_read < total_bytes_desired) {
-		unsigned char inbuf[BUFFER_SIZE];
-		unsigned char outbuf[BUFFER_SIZE + cipher_block_size];
 		int outlen;
 		int bytes_to_read;
 
-		if (total_bytes_desired - total_bytes_read > sizeof inbuf)
-			bytes_to_read = sizeof inbuf;
+		if (total_bytes_desired - total_bytes_read > buffer_size)
+			bytes_to_read = buffer_size;
 		else
 			bytes_to_read = total_bytes_desired - total_bytes_read;
 
-		count = read(input_fd, inbuf, bytes_to_read);
+		count = read_buffer(input_fd, inbuf, bytes_to_read);
 		if(count <= 0) {
 			ret = DECRYPT_READ_FAILED;
 			goto err;
@@ -247,7 +260,7 @@ static enum decrypt_result aes_gcm_decrypt(int input_fd, int output_fd, unsigned
 		}
 
 		total_bytes_read += count;
-		count = write(output_fd, outbuf, outlen);
+		count = write_buffer(output_fd, outbuf, outlen);
 		if(count != outlen) {
 			ret = DECRYPT_WRITE_FAILED;
 			goto err;
@@ -390,6 +403,35 @@ static bool construct_iv(char *iv, int size)
 }
 
 
+static void do_readahead(int fd)
+{
+
+	struct stat statbuf;
+	int result;
+	struct timeval start;
+	struct timeval end;
+	struct timeval delta;
+
+	
+	result = fstat(fd, &statbuf);
+	if(result < 0) {
+		fprintf(stderr, "problem with fstat: %s\n", strerror(errno));
+		exit(1);
+	}
+
+	gettimeofday(&start, NULL);
+	result = readahead(fd, 0, statbuf.st_size);
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &delta);
+	// fprintf(stderr, "readahead took %d.%06d\n", delta.tv_sec, delta.tv_usec);
+
+	if(result < 0) {
+		fprintf(stderr, "problems with readahead: %s\n", strerror(errno));
+		exit(1);
+	}
+}
+
+
 enum encrypt_result do_encrypt(const char *input, const char *output, size_t bytes,
 		  const uint8_t key[AES_256_BLOCK_SIZE]) 
 {
@@ -397,7 +439,6 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 	int output_fd;
 	// int retval;
 	enum encrypt_result ret; 
-	
 	bool result;
 	char iv[12];
 	size_t output_bytes;
@@ -414,6 +455,11 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 		return ENCRYPT_CANNOT_OPEN_INPUT;
 	}
 
+	if(bytes == 0) {
+		if(!getenv("NO_READAHEAD"))
+			do_readahead(input_fd);
+	}
+
 	if(false == test_special_file(input_fd)) {
 		/* test magic */
 	}
@@ -427,7 +473,7 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 		return ENCRYPT_CANNOT_OPEN_OUTPUT;
 	}
 
-	output_bytes = write(output_fd, magic, sizeof magic);
+	output_bytes = write_buffer(output_fd, magic, sizeof magic);
 	if(output_bytes != sizeof magic) {
 		fprintf(stderr, "cannot write magic\n");
 		ret = ENCRYPT_WRITE_FAILED;
@@ -441,7 +487,7 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 		goto failure;
 	}
 
-	output_bytes = write(output_fd, sha_value, sizeof sha_value);
+	output_bytes = write_buffer(output_fd, sha_value, sizeof sha_value);
 	if(output_bytes != sizeof sha_value) {
 		fprintf(stderr, "problem writing SHA256\n");
 		ret = ENCRYPT_WRITE_FAILED;
@@ -455,7 +501,7 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 		goto failure;
 	}
 #ifdef SAVE_IV
-	write(output_fd, iv, sizeof iv);
+	write_buffer(output_fd, iv, sizeof iv);
 #endif
 	switch (enum_cipher) {
 	case AES_256_GCM:
@@ -478,6 +524,7 @@ enum encrypt_result do_encrypt(const char *input, const char *output, size_t byt
 
 }
 
+
 enum decrypt_result do_decrypt(const char *input, const char *output,
 		const uint8_t key[AES_256_BLOCK_SIZE])
 {
@@ -498,6 +545,8 @@ enum decrypt_result do_decrypt(const char *input, const char *output,
 		return DECRYPT_OPEN_INPUT_FAILED;
 	}
 
+	do_readahead(input_fd);
+
 	output_fd = open(output, O_WRONLY | O_CREAT, 0666);
 	if (output_fd < 0) {
 		save_errno = errno;
@@ -506,7 +555,7 @@ enum decrypt_result do_decrypt(const char *input, const char *output,
 		return DECRYPT_OPEN_OUTPUT_FAILED;
 	}
 
-	bytes = read(input_fd, magic_read, sizeof magic_read);
+	bytes = read_buffer(input_fd, magic_read, sizeof magic_read);
 	if(bytes != sizeof magic_read) {
 		result = DECRYPT_CANNOT_READ_MAGIC;
 		goto failure;
@@ -517,7 +566,7 @@ enum decrypt_result do_decrypt(const char *input, const char *output,
 		goto failure;
 	}
 
-	bytes = read(input_fd,  sha_read, sizeof sha_read);
+	bytes = read_buffer(input_fd,  sha_read, sizeof sha_read);
 	if(bytes != sizeof sha_read) {
 		result = DECRYPT_CANNOT_READ_SHA;
 		goto failure;
@@ -531,7 +580,7 @@ enum decrypt_result do_decrypt(const char *input, const char *output,
 
 
 #ifdef SAVE_IV
-	retval = read(input_fd, iv, sizeof iv);
+	retval = read_buffer(input_fd, iv, sizeof iv);
 	if (retval != sizeof iv) {
 		result = DECRYPT_CANNOT_READ_IV;
 		goto failure;

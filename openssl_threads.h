@@ -35,5 +35,8 @@ int openssl_with_threads(struct thread_entry *array,
 		bool  (*callback)(struct thread_entry *entry, enum openssl_operation op_type, size_t size) );
 
 
+extern int buffer_size;
+extern int num_buffers;
+extern bool do_sync;
 #endif
 

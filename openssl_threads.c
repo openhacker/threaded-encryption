@@ -10,9 +10,10 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include "openssl_threads.h"
-
+#include "buffer_manager.h"
 
 struct thread_info {
 	struct thread_entry *work;
@@ -20,11 +21,15 @@ struct thread_info {
 	pthread_mutex_t work_available;
 	bool done;	/* work is done */
 	bool terminated;	/* thread doesn't exist anymore */
-	uint8_t *input_buffer;	/* malloced data */
-	uint8_t *output_buffer;	/* malloced data */
+	bool do_terminate;	/* single thread to exit */
 };
 
+static struct io_times total_times;
 
+
+int buffer_size = 16 * 1024;
+int num_buffers = 1;
+bool do_sync = false;
 
 static uint8_t AES_key[AES_256_KEY_SIZE];
 static enum openssl_operation op_type;
@@ -65,6 +70,7 @@ static bool create_thread_structure(int thread_count)
 
 static bool do_copy(const char *input, const char *output, int size)
 {
+#if 0
 	int flags;
 	int input_fd;
 	int output_fd;
@@ -125,14 +131,46 @@ static bool do_copy(const char *input, const char *output, int size)
 	}
 	close(input_fd);
 	close(output_fd);
+#endif
 	return true;
 }
 
-	
+
+static void sum_worktime(void)
+{
+	struct io_times io_times;
+	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+	retrieve_io_times(&io_times);
+
+	pthread_mutex_lock(&mutex);
+
+	timeradd(&total_times.read_cumulative, &io_times.read_cumulative, &total_times.read_cumulative);
+	timeradd(&total_times.write_cumulative, &io_times.write_cumulative, &total_times.write_cumulative);
+	total_times.num_writes += io_times.num_writes;
+	total_times.num_reads += io_times.num_reads;
+
+	pthread_mutex_unlock(&mutex);
+
+}
+static void get_worktime(void)
+{
+	struct io_times io_times;
+
+	retrieve_io_times(&io_times);
+	fprintf(stderr, "reads = %d, time = %ld.%.06ld\n", io_times.num_reads, io_times.read_cumulative.tv_sec,
+						io_times.read_cumulative.tv_usec);
+
+	fprintf(stderr, "writes = %d, time = %ld.%06ld\n", io_times.num_writes, io_times.write_cumulative.tv_sec,
+								io_times.write_cumulative.tv_usec);
+}
+
 
 static void *encrypt_decrypt_copy(void *args)
 {
 	struct thread_info *info = (struct thread_info *) args;
+
+	create_buffers(buffer_size, num_buffers);
 
 	while(1) {
 		struct thread_entry *current_work;
@@ -140,18 +178,25 @@ static void *encrypt_decrypt_copy(void *args)
 		int result;
 
 		pthread_mutex_lock(&info->work_available);
+		if(info->do_terminate == true) {
+			destroy_buffers();
+			pthread_exit(NULL);
+		}
 
 		current_work = info->work;
-
 //		printf("input file = %s, output_file = %s\n", current_work->input_file, current_work->output_file);
 		switch(op_type) {
 			case OP_ENCRYPT:
 				current_work->encrypt_status = do_encrypt(current_work->input_file, current_work->output_file, 
 					file_size, AES_key );
+				if(ENCRYPT_SUCCESSFUL == current_work->encrypt_status)
+					sum_worktime();
 				break;
 			case OP_DECRYPT:
 				current_work->decrypt_status = do_decrypt(current_work->input_file, current_work->output_file,
 								AES_key);
+				if(DECRYPT_SUCCESSFUL == current_work->decrypt_status)
+					sum_worktime();
 				break;
 			case OP_COPY:
 				current_work->copy_status = do_copy(current_work->input_file, current_work->output_file, file_size);
@@ -216,6 +261,21 @@ static double timeval_to_seconds(struct timeval t)
 	seconds += t.tv_usec / (1000.0 * 1000.0);
 
 	return seconds;
+}
+
+
+static double time_sync(void)
+{
+	struct timeval start;
+	struct timeval end;
+	struct timeval delta;
+
+	gettimeofday(&start, NULL);
+	sync();
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &delta);
+	return timeval_to_seconds(delta);
+	
 }
 
 int openssl_with_threads(struct thread_entry *array, 
@@ -367,6 +427,7 @@ int openssl_with_threads(struct thread_entry *array,
 
 					if(stop == false) {
 						fprintf(stderr, "want to stop\n");
+						exit(1);		/* need to be more elegant */
 					}
 				}
 
@@ -377,8 +438,17 @@ int openssl_with_threads(struct thread_entry *array,
 					work_left--;
 					jobs_processed++;
 				} else { 
-					// no more work for thread
-					pthread_cancel(pthread->info);
+					void *res;
+
+					pthread->do_terminate = true;
+					pthread_mutex_unlock(&pthread->work_available);
+
+					if(pthread_join(pthread->info, &res) != 0) {
+						fprintf(stderr, "pthread_join problem: %d: %s\n", pthread->info, strerror(errno));
+						exit(1);
+					}
+
+
 					pthread->terminated = true;
 				}
 				break;
@@ -441,17 +511,34 @@ int openssl_with_threads(struct thread_entry *array,
 		timersub(&end_time, &start_time, &delta_time);
 		seconds = delta_time.tv_sec;
 		seconds += delta_time.tv_usec / (1000.0 * 1000.0);
-		if(!getenv("NO_HEADING"))
-			printf("threads    type    files      bandwidth (G/sec)   wall time      usertime     systime\n");
+		if(!getenv("NO_HEADING")) {
+			printf("threads    type       files   bandwidth (G/sec)   wall time      usertime       systime     reads      writes");
+		      	if(true == do_sync)
+				printf("    sync");
+			printf("\n");
+		}	
 		printf("  %5d   %.10s  %7d",       num_threads,  operation_string, num_entries);
 
 
-		printf(                          "        %.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
+		printf(                          "     %9.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
 		timersub(&end_rusage.ru_utime, &start_rusage.ru_utime, &delta_usertime);
 		timersub(&end_rusage.ru_stime, &start_rusage.ru_stime, &delta_systime);
-		printf(                                              "       %.3f         %.3f        %.3f\n",
+		printf(                                              "    %8.3f      %8.3f      %8.3f",
 			timeval_to_seconds(delta_time), timeval_to_seconds(delta_usertime), timeval_to_seconds(delta_systime));
 		
+		printf(" %10.3f  %10.3f", 
+				timeval_to_seconds(total_times.read_cumulative),
+				timeval_to_seconds(total_times.write_cumulative));
+
+
+		if(true == do_sync) {
+			double seconds;
+
+			seconds = time_sync();	
+			printf("%8.3f", seconds);
+		}
+
+		printf("\n");
 		
 	}
 
