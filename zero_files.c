@@ -47,6 +47,12 @@ static bool callback(struct thread_entry *entry, enum openssl_operation op_type,
 
 static void usage(const char *string)
 {
+	printf("%s\n\n", string);
+	printf("\t-t\tnum threads\n");
+	printf("\t-c\nuse copy rather than encrypt (raw io)\n");
+	printf("\t -i iterations\n");
+	
+
 	exit(1);
 }
 
@@ -61,7 +67,7 @@ int main(int argc, char *argv[])
 	while(1) {
 		int c;
 
-		c = getopt(argc, argv, "t:c");
+		c = getopt(argc, argv, "t:ci:");
 		if(-1 == c)
 			break;
 		switch(c) {
@@ -70,6 +76,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'c':
 				op =  OP_COPY;
+				break;
+			case 'i':
+				num = atoi(optarg);
 				break;
 			default:
 				usage("illegal option");
@@ -80,8 +89,7 @@ int main(int argc, char *argv[])
 
 
 
-		
-	num = 100;
+	printf("running %d iterations\n", num);		
 
 	entries = create_zero_entries(num);
 

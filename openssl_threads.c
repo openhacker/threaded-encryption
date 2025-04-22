@@ -446,7 +446,7 @@ int openssl_with_threads(struct thread_entry *array,
 		printf("  %5d   %.10s  %7d",       num_threads,  operation_string, num_entries);
 
 
-		printf(                          "        %.3f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
+		printf(                          "        %.5f      ", ((bytes_processed) / (1024.0 * 1024.0 * 1024.0))  / seconds);
 		timersub(&end_rusage.ru_utime, &start_rusage.ru_utime, &delta_usertime);
 		timersub(&end_rusage.ru_stime, &start_rusage.ru_stime, &delta_systime);
 		printf(                                              "       %.3f         %.3f        %.3f\n",
